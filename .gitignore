@@ -1,0 +1,9 @@
+# compiled output and IDE files (CONVENTIONS G6)
+out/
+*.class
+*-sources.txt
+lib/
+.idea/
+.vscode/
+*.iml
+.DS_Store

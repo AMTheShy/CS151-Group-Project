@@ -1,0 +1,4 @@
+Local Search Engine sample document.
+The computer algorithm is described here.
+A second line mentions Computer Algorithms again.
+End of sample.
