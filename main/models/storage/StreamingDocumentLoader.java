@@ -1,8 +1,16 @@
 package models.storage;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.Objects;
 
 import models.AppConstants;
+import models.AsciiText;
 import models.CancellationToken;
 import models.DocumentStorageException;
 import models.InvalidDocumentException;
@@ -47,6 +55,15 @@ import models.ProgressListener;
  */
 public final class StreamingDocumentLoader implements DocumentLoader {
 
+    /** Bytes per megabyte for size messages (1 MB = 1024 * 1024 bytes). */
+    private static final double BYTES_PER_MEGABYTE = 1024.0 * 1024.0;
+
+    /** Suffix stripped from formatted sizes so that 20.0 MB is shown as 20 MB. */
+    private static final String ZERO_DECIMAL_SUFFIX = ".0";
+
+    /** Mask that turns a signed byte into its unsigned value 0..255 for messages. */
+    private static final int UNSIGNED_BYTE_MASK = 0xFF;
+
     /** Maximum accepted file size in bytes; injectable so tests can use a small limit (A-34). */
     private final long maxFileSizeBytes;
 
@@ -76,7 +93,144 @@ public final class StreamingDocumentLoader implements DocumentLoader {
     @Override
     public String load(Path source, ProgressListener progress, CancellationToken token)
             throws InvalidDocumentException, DocumentStorageException {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(progress, "progress");
+        Objects.requireNonNull(token, "token");
+
+        if (!Files.isRegularFile(source) || !Files.isReadable(source)) {
+            throw new InvalidDocumentException(InvalidDocumentException.Reason.NOT_A_REGULAR_FILE,
+                    "\"" + source + "\" is not a readable file.");
+        }
+        try {
+            long total = Files.size(source);
+            if (total > maxFileSizeBytes) {
+                throw fileTooLarge(total);
+            }
+            return readValidated(source, total, progress, token);
+        } catch (IOException ioException) {
+            throw new DocumentStorageException("Could not read \"" + source + "\": "
+                    + describe(ioException) + ".", ioException);
+        }
+    }
+
+    /**
+     * Streams the file into a buffer of the expected size, validating and reporting each chunk.
+     *
+     * @param source   the file, already checked to be a regular file
+     * @param total    the size reported by the file system before reading, {@code <= maxFileSizeBytes}
+     * @param progress receives byte progress
+     * @param token    checked once per chunk
+     * @return the decoded content
+     * @throws InvalidDocumentException if a non-ASCII byte is found or the file grows past the limit
+     * @throws IOException              if reading fails
+     */
+    private String readValidated(Path source, long total, ProgressListener progress, CancellationToken token)
+            throws InvalidDocumentException, IOException {
+        byte[] content = new byte[Math.toIntExact(total)];
+        int bytesRead = 0;
+        long lastReportedCompleted = -1;
+        long lastReportedTotal = -1;
+        try (InputStream input = Files.newInputStream(source)) {
+            while (true) {
+                if (bytesRead == content.length) {
+                    // Buffer full: the file is either complete or has grown since Files.size (R14).
+                    int nextByte = input.read();
+                    if (nextByte < 0) {
+                        break;
+                    }
+                    content = grow(content, bytesRead, source);
+                    content[bytesRead] = (byte) nextByte;
+                    token.throwIfCancelled();
+                    checkAscii(content, bytesRead, bytesRead + 1);
+                    bytesRead++;
+                } else {
+                    int requested = Math.min(AppConstants.IO_BUFFER_SIZE_BYTES, content.length - bytesRead);
+                    int chunkLength = input.read(content, bytesRead, requested);
+                    if (chunkLength < 0) {
+                        break;
+                    }
+                    token.throwIfCancelled();
+                    checkAscii(content, bytesRead, bytesRead + chunkLength);
+                    bytesRead += chunkLength;
+                }
+                lastReportedCompleted = bytesRead;
+                lastReportedTotal = Math.max(total, bytesRead);
+                progress.onProgress(lastReportedCompleted, lastReportedTotal);
+            }
+        }
+        // Final report, so the bar ends at 100 % even for empty files or files that shrank.
+        if (lastReportedCompleted != bytesRead || lastReportedTotal != bytesRead) {
+            progress.onProgress(bytesRead, bytesRead);
+        }
+        return new String(content, 0, bytesRead, StandardCharsets.US_ASCII);
+    }
+
+    /**
+     * Enlarges a full buffer because the file grew while being read, enforcing the size limit.
+     *
+     * @param content   the full buffer
+     * @param bytesRead number of valid bytes, equal to {@code content.length}
+     * @param source    the file, used to report its current size
+     * @return a larger buffer holding the same bytes
+     * @throws InvalidDocumentException if one more byte would exceed the limit
+     * @throws IOException              if the current size cannot be determined
+     */
+    private byte[] grow(byte[] content, int bytesRead, Path source) throws InvalidDocumentException, IOException {
+        long neededSize = (long) bytesRead + 1;
+        if (neededSize > maxFileSizeBytes) {
+            throw fileTooLarge(Math.max(neededSize, Files.size(source)));
+        }
+        long doubledSize = Math.max((long) content.length * 2, (long) AppConstants.IO_BUFFER_SIZE_BYTES);
+        int newCapacity = Math.toIntExact(Math.min(maxFileSizeBytes, Math.max(neededSize, doubledSize)));
+        return Arrays.copyOf(content, newCapacity);
+    }
+
+    /**
+     * Throws at the first byte in {@code content[from, to)} that is not ASCII.
+     *
+     * @param content the buffer
+     * @param from    first index to check, inclusive
+     * @param to      last index to check, exclusive
+     * @throws InvalidDocumentException with reason {@code NON_ASCII_CONTENT} naming the byte and its offset
+     */
+    private static void checkAscii(byte[] content, int from, int to) throws InvalidDocumentException {
+        for (int i = from; i < to; i++) {
+            if (!AsciiText.isAsciiByte(content[i])) {
+                String byteText = String.format(Locale.ROOT, "0x%02X", content[i] & UNSIGNED_BYTE_MASK);
+                throw new InvalidDocumentException(InvalidDocumentException.Reason.NON_ASCII_CONTENT,
+                        "The file contains a non-ASCII byte (" + byteText + ") at position " + i
+                                + ". Only plain ASCII text files can be imported.");
+            }
+        }
+    }
+
+    /**
+     * Creates the {@code FILE_TOO_LARGE} exception. If size and limit round to the same text
+     * (e.g. both {@code 20 MB}), exact byte counts are shown instead so the message makes sense.
+     *
+     * @param size the file size in bytes, {@code > maxFileSizeBytes}
+     * @return the exception to throw
+     */
+    private InvalidDocumentException fileTooLarge(long size) {
+        String sizeText = formatMegabytes(size);
+        String limitText = formatMegabytes(maxFileSizeBytes);
+        if (sizeText.equals(limitText)) {
+            sizeText = size + " bytes";
+            limitText = maxFileSizeBytes + " bytes";
+        }
+        return new InvalidDocumentException(InvalidDocumentException.Reason.FILE_TOO_LARGE,
+                "The file is " + sizeText + "; the maximum allowed size is " + limitText + ".");
+    }
+
+    /**
+     * Returns a short description of an I/O failure for messages.
+     *
+     * @param ioException the failure
+     * @return its message, or its class name if it has none
+     */
+    private static String describe(IOException ioException) {
+        String message = ioException.getMessage();
+        return message != null ? message : ioException.getClass().getSimpleName();
     }
 
     /**
@@ -86,6 +240,10 @@ public final class StreamingDocumentLoader implements DocumentLoader {
      * @return the formatted size
      */
     private static String formatMegabytes(long bytes) {
-        throw new UnsupportedOperationException("TODO: Member A");
+        String number = String.format(Locale.ROOT, "%.1f", bytes / BYTES_PER_MEGABYTE);
+        if (number.endsWith(ZERO_DECIMAL_SUFFIX)) {
+            number = number.substring(0, number.length() - ZERO_DECIMAL_SUFFIX.length());
+        }
+        return number + " MB";
     }
 }
