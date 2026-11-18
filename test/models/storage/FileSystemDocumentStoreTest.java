@@ -1,34 +1,53 @@
 package models.storage;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import models.Document;
+import models.DocumentException;
+import models.DocumentNotFoundException;
+import models.DocumentStorageException;
+import testsupport.TestDocuments;
+
 /**
  * Tests for {@code FileSystemDocumentStore}. Owner: Member A.
  *
- * <p>Cases A-20..A-30 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases A-20..A-30 of {@code design/test-plan.md}.</p>
  */
 class FileSystemDocumentStoreTest {
 
+    /** Pattern of a valid entry id: 64 lower-case hex characters. */
+    private static final String ENTRY_ID_PATTERN = "[0-9a-f]{64}";
+
     @TempDir
     Path tempDir;
+
+    private Path directory;
 
     private FileSystemDocumentStore store;
 
     /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
-        store = new FileSystemDocumentStore(tempDir.resolve("documents"));
+        directory = tempDir.resolve("documents");
+        store = new FileSystemDocumentStore(directory);
     }
 
     /**
@@ -39,10 +58,21 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: load returns equal document with same importedAt; content file bytes identical.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-20 round trip preserves bytes and metadata (D3, D4)")
-    void saveThenLoad_documentWithMixedLineBreaks_roundTripsExactly() {
-        fail("TODO: Member A - A-20");
+    void saveThenLoad_documentWithMixedLineBreaks_roundTripsExactly() throws IOException, DocumentException {
+        // Arrange
+        Instant importedAt = Instant.parse("2026-11-09T12:34:56.789Z");
+        Document document = new Document("Notes", "one\r\ntwo\nthree\rfour", importedAt);
+
+        // Act
+        store.save(document);
+        Document loaded = store.load("Notes");
+
+        // Assert
+        assertEquals(document, loaded);
+        assertEquals(importedAt, loaded.importedAt());
+        assertArrayEquals(document.content().getBytes(StandardCharsets.US_ASCII),
+                Files.readAllBytes(contentFile("Notes")));
     }
 
     /**
@@ -53,10 +83,15 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: &lt;id&gt;.txt exists and Files.isWritable is false.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-21 read-only copy (D4)")
-    void save_newDocument_contentFileIsReadOnly() {
-        fail("TODO: Member A - A-21");
+    void save_newDocument_contentFileIsReadOnly() throws DocumentStorageException {
+        // Act
+        store.save(TestDocuments.document("Notes"));
+
+        // Assert
+        Path contentFile = contentFile("Notes");
+        assertTrue(Files.isRegularFile(contentFile), "content file must exist: " + contentFile);
+        assertFalse(Files.isWritable(contentFile), "content file must be read-only");
     }
 
     /**
@@ -67,10 +102,19 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: load returns v2; still read-only; no .tmp files left.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-22 replace a read-only entry (Windows pitfall)")
-    void save_existingReadOnlyEntry_replacesContent() {
-        fail("TODO: Member A - A-22");
+    void save_existingReadOnlyEntry_replacesContent() throws IOException, DocumentException {
+        // Arrange
+        store.save(TestDocuments.document("Notes", "version one, a bit longer"));
+        Document second = TestDocuments.document("Notes", "version two");
+
+        // Act
+        store.save(second);
+
+        // Assert
+        assertEquals("version two", store.load("Notes").content());
+        assertFalse(Files.isWritable(contentFile("Notes")), "replaced content file must be read-only");
+        assertEquals(List.of(), fileNamesEndingWith(".tmp"));
     }
 
     /**
@@ -81,10 +125,18 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: both load correctly; entryId('Foo') != entryId('foo').</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-23 case-insensitive file systems")
-    void save_titlesDifferingOnlyInCase_storedSeparately() {
-        fail("TODO: Member A - A-23");
+    void save_titlesDifferingOnlyInCase_storedSeparately() throws DocumentException {
+        // Arrange
+        store.save(TestDocuments.document("Foo", "upper"));
+
+        // Act
+        store.save(TestDocuments.document("foo", "lower"));
+
+        // Assert
+        assertEquals("upper", store.load("Foo").content());
+        assertEquals("lower", store.load("foo").content());
+        assertNotEquals(FileSystemDocumentStore.entryId("Foo"), FileSystemDocumentStore.entryId("foo"));
     }
 
     /**
@@ -95,10 +147,21 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: load returns it; entryId is 64 lower-case hex chars.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-24 titles with / \\ : * ? \" < > |")
-    void save_titleWithIllegalFileNameCharacters_succeeds() {
-        fail("TODO: Member A - A-24");
+    void save_titleWithIllegalFileNameCharacters_succeeds() throws DocumentException {
+        // Arrange
+        String title = "a/b\\c:d*e?f\"g<h>i|j";
+        Document document = TestDocuments.document(title, "special");
+
+        // Act
+        store.save(document);
+
+        // Assert
+        Document loaded = store.load(title);
+        assertEquals(title, loaded.title());
+        assertEquals("special", loaded.content());
+        assertTrue(FileSystemDocumentStore.entryId(title).matches(ENTRY_ID_PATTERN),
+                "entry id must be 64 lower-case hex characters");
     }
 
     /**
@@ -109,10 +172,19 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: no files left for A; no exception.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-25 delete read-only entry")
-    void delete_existingAndMissingEntries_removesFilesIdempotently() {
-        fail("TODO: Member A - A-25");
+    void delete_existingAndMissingEntries_removesFilesIdempotently() throws IOException, DocumentException {
+        // Arrange
+        store.save(TestDocuments.document("A"));
+
+        // Act
+        store.delete("A");
+        store.delete("A");
+        store.delete("Missing");
+
+        // Assert
+        assertEquals(List.of(), fileNamesStartingWith(FileSystemDocumentStore.entryId("A")));
+        assertEquals(List.of(), store.listStoredTitles());
     }
 
     /**
@@ -123,10 +195,20 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: returns [A, b].</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-26 crash recovery")
-    void listStoredTitles_withTempAndOrphanFiles_returnsCompleteEntriesSorted() {
-        fail("TODO: Member A - A-26");
+    void listStoredTitles_withTempAndOrphanFiles_returnsCompleteEntriesSorted() throws IOException, DocumentException {
+        // Arrange
+        store.save(TestDocuments.document("b"));
+        store.save(TestDocuments.document("A"));
+        TestDocuments.writeAsciiFile(directory, "x.tmp", "half-written");
+        String orphanId = FileSystemDocumentStore.entryId("Orphan");
+        TestDocuments.writeAsciiFile(directory, orphanId + FileSystemDocumentStore.CONTENT_SUFFIX, "no metadata");
+
+        // Act
+        List<String> titles = store.listStoredTitles();
+
+        // Assert
+        assertEquals(List.of("A", "b"), titles);
     }
 
     /**
@@ -137,10 +219,13 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: DocumentNotFoundException.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-27 missing entry")
     void load_missingTitle_throwsDocumentNotFoundException() {
-        fail("TODO: Member A - A-27");
+        // Act
+        DocumentNotFoundException thrown = assertThrows(DocumentNotFoundException.class, () -> store.load("X"));
+
+        // Assert
+        assertEquals("X", thrown.title());
     }
 
     /**
@@ -151,10 +236,20 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: DocumentStorageException; listStoredTitles excludes 'A'.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-28 corrupt entry")
-    void load_lengthMismatch_throwsDocumentStorageException() {
-        fail("TODO: Member A - A-28");
+    void load_lengthMismatch_throwsDocumentStorageException() throws IOException, DocumentException {
+        // Arrange
+        store.save(TestDocuments.document("A", "the full original content"));
+        Path contentFile = contentFile("A");
+        assertTrue(contentFile.toFile().setWritable(true), "could not clear the read-only flag");
+        Files.write(contentFile, "trunc".getBytes(StandardCharsets.US_ASCII));
+
+        // Act
+        DocumentStorageException thrown = assertThrows(DocumentStorageException.class, () -> store.load("A"));
+
+        // Assert
+        assertTrue(thrown.getMessage().contains("\"A\""), "message must name the title: " + thrown.getMessage());
+        assertEquals(List.of(), store.listStoredTitles());
     }
 
     /**
@@ -165,10 +260,21 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: first: directory created, empty list; second: DocumentStorageException.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-29 lazy directory creation and unusable directory")
-    void listStoredTitles_missingDirectory_createsIt() {
-        fail("TODO: Member A - A-29");
+    void listStoredTitles_missingDirectory_createsIt() throws IOException, DocumentStorageException {
+        // Arrange
+        assertFalse(Files.exists(directory), "precondition: directory must not exist yet");
+        Path fileInsteadOfDirectory = TestDocuments.writeAsciiFile(tempDir, "not-a-folder", "x");
+        FileSystemDocumentStore unusableStore = new FileSystemDocumentStore(fileInsteadOfDirectory);
+
+        // Act
+        List<String> titles = store.listStoredTitles();
+
+        // Assert
+        assertTrue(Files.isDirectory(directory), "directory must be created lazily");
+        assertEquals(List.of(), titles);
+        assertThrows(DocumentStorageException.class, unusableStore::listStoredTitles);
+        assertThrows(DocumentStorageException.class, () -> unusableStore.save(TestDocuments.document("A")));
     }
 
     /**
@@ -179,9 +285,60 @@ class FileSystemDocumentStoreTest {
      * <p>Assert: store2.listStoredTitles() = [A, B]; loads equal docs.</p>
      */
     @Test
-    @Disabled("TODO: Member A")
     @DisplayName("A-30 persistence across restarts (D5)")
-    void newInstance_sameDirectory_seesPreviouslySavedDocuments() {
-        fail("TODO: Member A - A-30");
+    void newInstance_sameDirectory_seesPreviouslySavedDocuments() throws DocumentException {
+        // Arrange
+        Document first = TestDocuments.document("A", "first");
+        Document second = TestDocuments.document("B", "second");
+        store.save(first);
+        store.save(second);
+        FileSystemDocumentStore restarted = new FileSystemDocumentStore(directory);
+
+        // Act
+        List<String> titles = restarted.listStoredTitles();
+        Document loadedFirst = restarted.load("A");
+        Document loadedSecond = restarted.load("B");
+
+        // Assert
+        assertEquals(List.of("A", "B"), titles);
+        assertEquals(first, loadedFirst);
+        assertEquals(second, loadedSecond);
+        assertEquals(first.importedAt(), loadedFirst.importedAt());
+    }
+
+    /**
+     * Returns the content file of a stored title.
+     *
+     * @param title the title
+     * @return {@code <directory>/<id>.txt}
+     */
+    private Path contentFile(String title) {
+        return directory.resolve(FileSystemDocumentStore.entryId(title) + FileSystemDocumentStore.CONTENT_SUFFIX);
+    }
+
+    /**
+     * Lists file names in the storage directory that end with a suffix.
+     *
+     * @param suffix the suffix
+     * @return the matching names, empty if none
+     * @throws IOException if listing fails
+     */
+    private List<String> fileNamesEndingWith(String suffix) throws IOException {
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.map(path -> path.getFileName().toString()).filter(name -> name.endsWith(suffix)).toList();
+        }
+    }
+
+    /**
+     * Lists file names in the storage directory that start with a prefix.
+     *
+     * @param prefix the prefix
+     * @return the matching names, empty if none
+     * @throws IOException if listing fails
+     */
+    private List<String> fileNamesStartingWith(String prefix) throws IOException {
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.map(path -> path.getFileName().toString()).filter(name -> name.startsWith(prefix)).toList();
+        }
     }
 }
