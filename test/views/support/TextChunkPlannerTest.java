@@ -1,19 +1,22 @@
 package views.support;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.MatchRange;
 
 /**
  * Tests for {@code TextChunkPlanner}. Owner: Member B.
  *
- * <p>Cases B-41..B-43 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases B-41..B-43 of {@code design/test-plan.md}.
+ * Tests retain fixed method names and display IDs from the test plan.
+ * Each test covers the corresponding scenario in its Javadoc.</p>
  */
 class TextChunkPlannerTest {
 
@@ -33,10 +36,11 @@ class TextChunkPlannerTest {
      * <p>Assert: [0,4),[4,8),[8,10).</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-41 chunked text rendering (U6)")
     void chunks_textLengthTen_returnsContiguousCoveringChunks() {
-        fail("TODO: Member B - B-41");
+        assertEquals(4, planner.chunkSize());
+        assertEquals(List.of(new MatchRange(0, 4), new MatchRange(4, 8), new MatchRange(8, 10)),
+                planner.chunks(10));
     }
 
     /**
@@ -47,10 +51,9 @@ class TextChunkPlannerTest {
      * <p>Assert: empty list.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-42 empty document")
     void chunks_zeroLength_returnsNoChunks() {
-        fail("TODO: Member B - B-42");
+        assertEquals(List.of(), planner.chunks(0));
     }
 
     /**
@@ -61,9 +64,9 @@ class TextChunkPlannerTest {
      * <p>Assert: IllegalArgumentException.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-43 argument validation")
     void constructor_invalidArguments_throwIllegalArgumentException() {
-        fail("TODO: Member B - B-43");
+        assertThrows(IllegalArgumentException.class, () -> new TextChunkPlanner(0));
+        assertThrows(IllegalArgumentException.class, () -> planner.chunks(-1));
     }
 }

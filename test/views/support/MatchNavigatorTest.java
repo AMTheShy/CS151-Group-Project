@@ -1,18 +1,19 @@
 package views.support;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
  * Tests for {@code MatchNavigator}. Owner: Member B.
  *
- * <p>Cases B-30..B-35 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases B-30..B-35 of {@code design/test-plan.md}.
+ * Tests retain fixed method names and display IDs from the test plan.
+ * Each test covers the corresponding scenario in its Javadoc.</p>
  */
 class MatchNavigatorTest {
 
@@ -24,10 +25,13 @@ class MatchNavigatorTest {
      * <p>Assert: currentIndex 0; positionLabel '1 / 5'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-30 initial state (U5)")
     void constructor_someMatches_startsAtFirstMatch() {
-        fail("TODO: Member B - B-30");
+        MatchNavigator navigator = new MatchNavigator(5);
+        assertTrue(navigator.hasMatches());
+        assertEquals(5, navigator.matchCount());
+        assertEquals(0, navigator.currentIndex().orElseThrow());
+        assertEquals("1 / 5", navigator.positionLabel());
     }
 
     /**
@@ -38,10 +42,12 @@ class MatchNavigatorTest {
      * <p>Assert: indices 1, 2, 0.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-31 cyclic next (UC4)")
     void next_atLastMatch_wrapsToFirst() {
-        fail("TODO: Member B - B-31");
+        MatchNavigator navigator = new MatchNavigator(3);
+        assertEquals(1, navigator.next());
+        assertEquals(2, navigator.next());
+        assertEquals(0, navigator.next());
     }
 
     /**
@@ -52,10 +58,11 @@ class MatchNavigatorTest {
      * <p>Assert: index 2; label '3 / 3'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-32 cyclic previous (UC4)")
     void previous_atFirstMatch_wrapsToLast() {
-        fail("TODO: Member B - B-32");
+        MatchNavigator navigator = new MatchNavigator(3);
+        assertEquals(2, navigator.previous());
+        assertEquals("3 / 3", navigator.positionLabel());
     }
 
     /**
@@ -67,10 +74,14 @@ class MatchNavigatorTest {
      * IllegalStateException.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-33 no matches")
     void navigator_zeroMatches_reportsEmptyAndRejectsMoves() {
-        fail("TODO: Member B - B-33");
+        MatchNavigator navigator = new MatchNavigator(0);
+        assertFalse(navigator.hasMatches());
+        assertTrue(navigator.currentIndex().isEmpty());
+        assertEquals("0 / 0", navigator.positionLabel());
+        assertThrows(IllegalStateException.class, navigator::next);
+        assertThrows(IllegalStateException.class, navigator::previous);
     }
 
     /**
@@ -81,10 +92,12 @@ class MatchNavigatorTest {
      * <p>Assert: next() and previous() return 0.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-34 single match")
     void nextAndPrevious_singleMatch_stayOnIt() {
-        fail("TODO: Member B - B-34");
+        MatchNavigator navigator = new MatchNavigator(1);
+        assertEquals(0, navigator.next());
+        assertEquals(0, navigator.previous());
+        assertEquals("1 / 1", navigator.positionLabel());
     }
 
     /**
@@ -95,9 +108,12 @@ class MatchNavigatorTest {
      * <p>Assert: after moveTo(2) label '3 / 4'; others throw IndexOutOfBoundsException.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-35 jump to match")
     void moveTo_outOfRange_throwsIndexOutOfBoundsException() {
-        fail("TODO: Member B - B-35");
+        MatchNavigator navigator = new MatchNavigator(4);
+        navigator.moveTo(2);
+        assertEquals("3 / 4", navigator.positionLabel());
+        assertThrows(IndexOutOfBoundsException.class, () -> navigator.moveTo(4));
+        assertThrows(IndexOutOfBoundsException.class, () -> navigator.moveTo(-1));
     }
 }

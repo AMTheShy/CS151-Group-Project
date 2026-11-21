@@ -3,11 +3,13 @@ package views.support;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 
 import models.ImportProgress;
+import models.ImportState;
 
 /**
  * Display model of the import progress area on the left (U2): one row per running or recently
@@ -53,7 +55,20 @@ public final class ImportProgressTracker {
      * @return {@code true} if the visible rows changed
      */
     public boolean apply(ImportProgress progress) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(progress, "progress");
+        long importId = progress.importId();
+        if (removedIds.contains(importId)) {
+            return false;
+        }
+        ImportProgress previous = rows.get(importId);
+        if (previous != null && previous.state().isTerminal()) {
+            return false;
+        }
+        if (progress.equals(previous)) {
+            return false;
+        }
+        rows.put(importId, progress);
+        return true;
     }
 
     /**
@@ -62,7 +77,7 @@ public final class ImportProgressTracker {
      * @return immutable list
      */
     public List<ImportProgress> rows() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return List.copyOf(rows.values());
     }
 
     /**
@@ -72,7 +87,7 @@ public final class ImportProgressTracker {
      * @return the row, or empty
      */
     public Optional<ImportProgress> row(long importId) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return Optional.ofNullable(rows.get(importId));
     }
 
     /**
@@ -82,7 +97,8 @@ public final class ImportProgressTracker {
      * @return {@code true} if a row was removed
      */
     public boolean remove(long importId) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        removedIds.add(importId);
+        return rows.remove(importId) != null;
     }
 
     /**
@@ -92,6 +108,15 @@ public final class ImportProgressTracker {
      * @return the status text
      */
     public static String statusText(ImportProgress progress) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(progress, "progress");
+        ImportState state = progress.state();
+        return switch (state) {
+            case QUEUED -> "Queued";
+            case READING -> "Reading " + progress.percentComplete() + "%";
+            case SAVING -> "Saving";
+            case COMPLETED -> "Done";
+            case CANCELLED -> "Cancelled";
+            case FAILED -> "Failed: " + progress.errorMessage().orElseThrow();
+        };
     }
 }
