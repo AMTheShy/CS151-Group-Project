@@ -1,19 +1,24 @@
 package models.search;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.MatchRange;
+import models.Snippet;
+import testsupport.TestDocuments;
 
 /**
  * Tests for {@code DefaultSnippetExtractor}. Owner: Member B.
  *
- * <p>Cases B-19..B-29 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases B-19..B-29 of {@code design/test-plan.md}.
+ * Tests retain fixed method names and display IDs from the test plan.
+ * Each test covers the corresponding scenario in its Javadoc.</p>
  */
 class DefaultSnippetExtractorTest {
 
@@ -33,10 +38,14 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: '...' + 40 x + NEEDLE + 40 y + '...'; highlight [43,49); both flags true.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-19 context on both sides (S4)")
-    void extract_matchInMiddle_hasBothEllipsesAndCorrectHighlight() {
-        fail("TODO: Member B - B-19");
+    void extract_matchInMiddle_hasBothEllipsesAndCorrectHighlight() throws Exception {
+        String text = TestDocuments.readResource(TestDocuments.RESOURCE_SNIPPET_BOUNDARIES);
+        Snippet snippet = extractor.extract(text, new MatchRange(100, 106), 40);
+        assertEquals("..." + "x".repeat(40) + "NEEDLE" + "y".repeat(40) + "...", snippet.text());
+        assertEquals(new MatchRange(43, 49), snippet.highlight());
+        assertTrue(snippet.truncatedStart());
+        assertTrue(snippet.truncatedEnd());
     }
 
     /**
@@ -47,10 +56,12 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: text starts with the document start; truncatedStart false.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-20 truncation at document start")
     void extract_matchNearStart_noLeadingEllipsis() {
-        fail("TODO: Member B - B-20");
+        String text = "helloNEEDLE" + "x".repeat(80);
+        Snippet snippet = extractor.extract(text, new MatchRange(5, 11), 40);
+        assertTrue(snippet.text().startsWith("hello"));
+        assertFalse(snippet.truncatedStart());
     }
 
     /**
@@ -61,10 +72,12 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: truncatedEnd false; text ends with document end.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-21 truncation at document end")
     void extract_matchNearEnd_noTrailingEllipsis() {
-        fail("TODO: Member B - B-21");
+        String text = "x".repeat(80) + "NEEDLEend";
+        Snippet snippet = extractor.extract(text, new MatchRange(80, 86), 40);
+        assertFalse(snippet.truncatedEnd());
+        assertTrue(snippet.text().endsWith("end"));
     }
 
     /**
@@ -75,10 +88,13 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: snippet text equals the whole text; no ellipsis.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-22 short document")
     void extract_shortDocument_wholeTextWithoutEllipsis() {
-        fail("TODO: Member B - B-22");
+        String text = "a NEEDLE b";
+        Snippet snippet = extractor.extract(text, new MatchRange(2, 8), 40);
+        assertEquals(text, snippet.text());
+        assertFalse(snippet.truncatedStart());
+        assertFalse(snippet.truncatedEnd());
     }
 
     /**
@@ -89,10 +105,12 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: truncatedStart false.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-23 boundary: exactly 40 before")
     void extract_exactlyContextCharsBefore_noLeadingEllipsis() {
-        fail("TODO: Member B - B-23");
+        String text = "x".repeat(40) + "NEEDLE";
+        Snippet snippet = extractor.extract(text, new MatchRange(40, 46), 40);
+        assertFalse(snippet.truncatedStart());
+        assertEquals(40, snippet.highlight().start());
     }
 
     /**
@@ -103,10 +121,13 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: truncatedStart true; first context char is text[1].</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-24 boundary: 41 before")
     void extract_contextPlusOneCharsBefore_leadingEllipsis() {
-        fail("TODO: Member B - B-24");
+        String text = "x".repeat(41) + "NEEDLE";
+        Snippet snippet = extractor.extract(text, new MatchRange(41, 47), 40);
+        assertTrue(snippet.truncatedStart());
+        assertEquals("..." + text.substring(1), snippet.text());
+        assertEquals(new MatchRange(43, 49), snippet.highlight());
     }
 
     /**
@@ -117,10 +138,14 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: no CR/LF in snippet; same length as source window; highlight still on NEEDLE.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-25 line breaks replaced for display (S4)")
     void extract_lineBreaksInContext_replacedOneToOne() {
-        fail("TODO: Member B - B-25");
+        String text = "ab\r\ncd NEEDLE ef\ngh";
+        Snippet snippet = extractor.extract(text, new MatchRange(7, 13), 40);
+        assertEquals(text.length(), snippet.text().length());
+        assertFalse(snippet.text().contains("\r"));
+        assertFalse(snippet.text().contains("\n"));
+        assertEquals("NEEDLE", snippet.highlightedText());
     }
 
     /**
@@ -131,10 +156,12 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: '...' + match + '...'; highlight [3, 3+len).</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-26 context 0")
     void extract_zeroContext_onlyMatchedText() {
-        fail("TODO: Member B - B-26");
+        String text = "beforeNEEDLEafter";
+        Snippet snippet = extractor.extract(text, new MatchRange(6, 12), 0);
+        assertEquals("...NEEDLE...", snippet.text());
+        assertEquals(new MatchRange(3, 9), snippet.highlight());
     }
 
     /**
@@ -145,10 +172,14 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: IllegalArgumentException.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-27 argument validation")
     void extract_invalidArguments_throwIllegalArgumentException() {
-        fail("TODO: Member B - B-27");
+        assertThrows(IllegalArgumentException.class,
+                () -> extractor.extract("abc", new MatchRange(2, 4), 40));
+        assertThrows(IllegalArgumentException.class,
+                () -> extractor.extract("abc", new MatchRange(0, 1), -1));
+        assertThrows(NullPointerException.class,
+                () -> extractor.extract(null, new MatchRange(0, 1), 0));
     }
 
     /**
@@ -159,10 +190,14 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: 500 chars, no CR/LF; short text returned whole.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-28 library preview (D7)")
     void preview_longTextWithLineBreaks_first500CharsWithoutLineBreaks() {
-        fail("TODO: Member B - B-28");
+        String text = "a".repeat(200) + "\n" + "b".repeat(799);
+        String preview = extractor.preview(text, 500);
+        assertEquals(500, preview.length());
+        assertFalse(preview.contains("\r"));
+        assertFalse(preview.contains("\n"));
+        assertEquals("short text", extractor.preview("short text", 500));
     }
 
     /**
@@ -173,9 +208,10 @@ class DefaultSnippetExtractorTest {
      * <p>Assert: '' for 0; IllegalArgumentException for -1.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-29 preview limits")
     void preview_zeroOrNegativeMax_handledPerContract() {
-        fail("TODO: Member B - B-29");
+        assertEquals("", extractor.preview("abc", 0));
+        assertThrows(IllegalArgumentException.class, () -> extractor.preview("abc", -1));
+        assertThrows(NullPointerException.class, () -> extractor.preview(null, 4));
     }
 }

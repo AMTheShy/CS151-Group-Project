@@ -4,10 +4,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import models.AppConstants;
+import models.AsciiText;
 import models.CancellationToken;
 import models.Document;
 import models.DocumentSearchResult;
 import models.MatchRange;
+import models.MatchRanges;
 import models.SearchQuery;
 
 /**
@@ -72,7 +75,32 @@ public final class LinearScanSearchEngine implements SearchEngine {
      */
     @Override
     public List<MatchRange> findAllMatches(String text, SearchQuery query, CancellationToken token) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(token, "token");
+        token.throwIfCancelled();
+        String foldedQuery = query.foldedText();
+        int matchLength = foldedQuery.length();
+        MatchRanges.Builder matches = MatchRanges.builder(matchLength);
+        int maxStart = text.length() - matchLength;
+        int position = 0;
+        int positionsSinceCheck = 0;
+        char first = foldedQuery.charAt(0);
+        while (position <= maxStart) {
+            int step = 1;
+            if (AsciiText.toLowerAscii(text.charAt(position)) == first
+                    && matchesAt(text, position, foldedQuery)) {
+                matches.add(position);
+                step = matchLength;
+            }
+            position += step;
+            positionsSinceCheck += step;
+            if (positionsSinceCheck >= AppConstants.CANCELLATION_CHECK_INTERVAL) {
+                token.throwIfCancelled();
+                positionsSinceCheck %= AppConstants.CANCELLATION_CHECK_INTERVAL;
+            }
+        }
+        return matches.build();
     }
 
     /**
@@ -85,7 +113,16 @@ public final class LinearScanSearchEngine implements SearchEngine {
      */
     @Override
     public Optional<DocumentSearchResult> search(Document document, SearchQuery query, CancellationToken token) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(document, "document");
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(token, "token");
+        String content = document.content();
+        List<MatchRange> matches = findAllMatches(content, query, token);
+        if (matches.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new DocumentSearchResult(document, matches,
+                snippetExtractor.extract(content, matches.get(0), AppConstants.SNIPPET_CONTEXT)));
     }
 
     /**
@@ -99,6 +136,11 @@ public final class LinearScanSearchEngine implements SearchEngine {
      * @return {@code true} on a full match
      */
     private static boolean matchesAt(String text, int position, String foldedQuery) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        for (int index = 0; index < foldedQuery.length(); index++) {
+            if (AsciiText.toLowerAscii(text.charAt(position + index)) != foldedQuery.charAt(index)) {
+                return false;
+            }
+        }
+        return true;
     }
 }

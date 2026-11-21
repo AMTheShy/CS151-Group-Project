@@ -1,18 +1,19 @@
 package views.support;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.SearchQuery;
 
 /**
  * Tests for {@code TabTitleFormatter}. Owner: Member B.
  *
- * <p>Cases B-47..B-51 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases B-47..B-51 of {@code design/test-plan.md}.
+ * Tests retain fixed method names and display IDs from the test plan.
+ * Each test covers the corresponding scenario in its Javadoc.</p>
  */
 class TabTitleFormatterTest {
 
@@ -24,10 +25,9 @@ class TabTitleFormatterTest {
      * <p>Assert: 'computer'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-47 tab name = query (U3)")
     void tabTitle_shortQuery_returnedUnchanged() {
-        fail("TODO: Member B - B-47");
+        assertEquals("computer", TabTitleFormatter.tabTitle(SearchQuery.of("computer")));
     }
 
     /**
@@ -38,10 +38,10 @@ class TabTitleFormatterTest {
      * <p>Assert: unchanged.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-48 boundary 30")
     void tabTitle_thirtyCharacters_notTruncated() {
-        fail("TODO: Member B - B-48");
+        String text = "a".repeat(30);
+        assertEquals(text, TabTitleFormatter.tabTitle(SearchQuery.of(text)));
     }
 
     /**
@@ -52,10 +52,11 @@ class TabTitleFormatterTest {
      * <p>Assert: first 30 chars + '...' (33 chars).</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-49 boundary 31")
     void tabTitle_thirtyOneCharacters_truncatedWithEllipsis() {
-        fail("TODO: Member B - B-49");
+        String text = "a".repeat(31);
+        assertEquals("a".repeat(30) + "...", TabTitleFormatter.tabTitle(SearchQuery.of(text)));
+        assertEquals(33, TabTitleFormatter.tabTitle(SearchQuery.of(text)).length());
     }
 
     /**
@@ -66,10 +67,9 @@ class TabTitleFormatterTest {
      * <p>Assert: 'a b c'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-50 single-line tab title")
     void tabTitle_queryWithTabOrLineBreak_shownAsSpaces() {
-        fail("TODO: Member B - B-50");
+        assertEquals("a b c", TabTitleFormatter.tabTitle(SearchQuery.of("a\tb\nc")));
     }
 
     /**
@@ -80,9 +80,10 @@ class TabTitleFormatterTest {
      * <p>Assert: tooltip equals query.text().</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-51 tooltip shows full query (U3)")
     void tooltip_longQuery_returnsFullText() {
-        fail("TODO: Member B - B-51");
+        SearchQuery query = SearchQuery.of("a".repeat(50));
+        assertEquals(query.text(), TabTitleFormatter.tooltip(query));
+        assertThrows(NullPointerException.class, () -> TabTitleFormatter.tooltip(null));
     }
 }

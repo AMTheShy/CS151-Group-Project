@@ -1,5 +1,7 @@
 package views.support;
 
+import java.util.Objects;
+
 import models.AppConstants;
 import models.SearchQuery;
 
@@ -30,7 +32,11 @@ public final class TabTitleFormatter {
      * @throws NullPointerException if {@code query} is {@code null}
      */
     public static String tabTitle(SearchQuery query) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(query, "query");
+        String text = query.text();
+        String title = text.length() <= AppConstants.TAB_TITLE_MAX_LENGTH ? text
+                : text.substring(0, AppConstants.TAB_TITLE_MAX_LENGTH) + AppConstants.ELLIPSIS;
+        return title.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
     }
 
     /**
@@ -41,6 +47,7 @@ public final class TabTitleFormatter {
      * @throws NullPointerException if {@code query} is {@code null}
      */
     public static String tooltip(SearchQuery query) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(query, "query");
+        return query.text();
     }
 }
