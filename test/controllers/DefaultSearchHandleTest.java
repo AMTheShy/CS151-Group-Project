@@ -1,47 +1,91 @@
 package controllers;
+//MEMBER C
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import models.SearchQuery;
 
-/**
- * Tests for {@code DefaultSearchHandle}. Owner: Member C.
- *
- * <p>Cases C-39..C-39 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
- */
 class DefaultSearchHandleTest {
 
     private DefaultSearchHandle handle;
 
-    /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
         handle = new DefaultSearchHandle(SearchQuery.of("q"));
     }
 
-    /**
-     * C-39: CAS state machine (R5) [concurrency].
-     *
-     * <p>Arrange: (a) cancel then tryComplete; (b) tryComplete then cancel; (c) 2 threads x 1000
-     * rounds.</p>
-     * <p>Act: cancel / tryComplete.</p>
-     * <p>Assert: (a) tryComplete false; (b) cancel no effect, isCancelled false; (c) exactly one winner per
-     * round.</p>
-     */
     @Test
     @Tag("concurrency")
-    @Disabled("TODO: Member C")
     @DisplayName("C-39 CAS state machine (R5)")
-    void cancelAndTryComplete_raceOnState_exactlyOneWins() {
-        fail("TODO: Member C - C-39");
+    void cancelAndTryComplete_raceOnState_exactlyOneWins() throws Exception {
+        FutureTask<Void> attached = new FutureTask<>(() -> null);
+        handle.attachFutures(List.of(attached));
+
+        handle.cancel();
+
+        assertTrue(handle.isCancelled());
+        assertTrue(handle.isDone());
+        assertTrue(handle.token().isCancelled());
+        assertTrue(attached.isCancelled());
+        assertFalse(handle.tryComplete());
+        assertFalse(handle.tryFail());
+
+        FutureTask<Void> late = new FutureTask<>(() -> null);
+        handle.attachFutures(List.of(late));
+        assertTrue(late.isCancelled());
+
+        DefaultSearchHandle completed =
+                new DefaultSearchHandle(SearchQuery.of("q"));
+
+        assertTrue(completed.tryComplete());
+        completed.cancel();
+
+        assertTrue(completed.isDone());
+        assertFalse(completed.isCancelled());
+
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            for (int round = 0; round < 1000; round++) {
+                DefaultSearchHandle racing =
+                        new DefaultSearchHandle(SearchQuery.of("q"));
+                CountDownLatch start = new CountDownLatch(1);
+
+                Future<?> cancellation = workers.submit(() -> {
+                    start.await();
+                    racing.cancel();
+                    return null;
+                });
+
+                Future<Boolean> completion = workers.submit(() -> {
+                    start.await();
+                    return racing.tryComplete();
+                });
+
+                start.countDown();
+
+                cancellation.get(5, TimeUnit.SECONDS);
+                boolean completionWon = completion.get(5, TimeUnit.SECONDS);
+
+                assertTrue(racing.isDone());
+                assertEquals(!completionWon, racing.isCancelled(),
+                        "Round " + round);
+            }
+        } finally {
+            workers.shutdownNow();
+        }
     }
 }
