@@ -1,5 +1,8 @@
 package models.search;
 
+import java.util.Objects;
+
+import models.AppConstants;
 import models.MatchRange;
 import models.Snippet;
 
@@ -47,7 +50,26 @@ public final class DefaultSnippetExtractor implements SnippetExtractor {
      */
     @Override
     public Snippet extract(String text, MatchRange match, int context) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(match, "match");
+        if (context < 0) {
+            throw new IllegalArgumentException("context must be >= 0 but was " + context);
+        }
+        if (match.end() > text.length()) {
+            throw new IllegalArgumentException("match end " + match.end()
+                    + " exceeds text length " + text.length());
+        }
+        int from = Math.max(0, match.start() - context);
+        int to = match.end() + Math.min(context, text.length() - match.end());
+        boolean truncatedStart = from > 0;
+        boolean truncatedEnd = to < text.length();
+        String body = replaceLineBreaks(text.substring(from, to));
+        String display = (truncatedStart ? AppConstants.ELLIPSIS : "")
+                + body + (truncatedEnd ? AppConstants.ELLIPSIS : "");
+        int highlightStart = (truncatedStart ? AppConstants.ELLIPSIS.length() : 0)
+                + (match.start() - from);
+        MatchRange highlight = new MatchRange(highlightStart, highlightStart + match.length());
+        return new Snippet(display, highlight, truncatedStart, truncatedEnd);
     }
 
     /**
@@ -57,7 +79,11 @@ public final class DefaultSnippetExtractor implements SnippetExtractor {
      */
     @Override
     public String preview(String text, int maxChars) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(text, "text");
+        if (maxChars < 0) {
+            throw new IllegalArgumentException("maxChars must be >= 0 but was " + maxChars);
+        }
+        return replaceLineBreaks(text.substring(0, Math.min(maxChars, text.length())));
     }
 
     /**
@@ -67,6 +93,7 @@ public final class DefaultSnippetExtractor implements SnippetExtractor {
      * @return the text without line breaks, same length
      */
     static String replaceLineBreaks(String text) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(text, "text");
+        return text.replace('\r', ' ').replace('\n', ' ');
     }
 }

@@ -1,6 +1,10 @@
 package views.support;
 
 import java.nio.file.Path;
+import java.util.Objects;
+
+import models.AppConstants;
+import models.AsciiText;
 
 /**
  * Derives the default title offered in the import dialog from the chosen file (D1).
@@ -38,6 +42,22 @@ public final class TitleSuggester {
      * @throws IllegalArgumentException if {@code file} has no file name (e.g. a root)
      */
     public static String suggestTitle(Path file) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(file, "file");
+        Path name = file.getFileName();
+        if (name == null) {
+            throw new IllegalArgumentException("file must have a file name: " + file);
+        }
+        String filename = name.toString();
+        int extensionStart = filename.lastIndexOf('.');
+        if (extensionStart > 0) {
+            filename = filename.substring(0, extensionStart);
+        }
+        StringBuilder suggestion = new StringBuilder(filename.length());
+        for (int index = 0; index < filename.length(); index++) {
+            char character = filename.charAt(index);
+            suggestion.append(AsciiText.isPrintableAscii(character) ? character : '_');
+        }
+        String trimmed = suggestion.toString().trim();
+        return trimmed.substring(0, Math.min(trimmed.length(), AppConstants.MAX_TITLE_LENGTH)).trim();
     }
 }

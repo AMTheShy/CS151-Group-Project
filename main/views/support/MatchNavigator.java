@@ -52,7 +52,7 @@ public final class MatchNavigator {
      * @return {@code n}
      */
     public int matchCount() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return matchCount;
     }
 
     /**
@@ -61,7 +61,7 @@ public final class MatchNavigator {
      * @return {@code n > 0}
      */
     public boolean hasMatches() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return matchCount > 0;
     }
 
     /**
@@ -70,7 +70,7 @@ public final class MatchNavigator {
      * @return the index, or empty when there are no matches
      */
     public OptionalInt currentIndex() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return hasMatches() ? OptionalInt.of(currentIndex) : OptionalInt.empty();
     }
 
     /**
@@ -80,7 +80,11 @@ public final class MatchNavigator {
      * @throws IllegalStateException if there are no matches
      */
     public int next() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        if (!hasMatches()) {
+            throw new IllegalStateException("No matches to navigate");
+        }
+        currentIndex = currentIndex + 1 == matchCount ? 0 : currentIndex + 1;
+        return currentIndex;
     }
 
     /**
@@ -90,7 +94,11 @@ public final class MatchNavigator {
      * @throws IllegalStateException if there are no matches
      */
     public int previous() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        if (!hasMatches()) {
+            throw new IllegalStateException("No matches to navigate");
+        }
+        currentIndex = currentIndex == 0 ? matchCount - 1 : currentIndex - 1;
+        return currentIndex;
     }
 
     /**
@@ -100,7 +108,10 @@ public final class MatchNavigator {
      * @throws IndexOutOfBoundsException if out of range (always when {@code n == 0})
      */
     public void moveTo(int index) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        if (index < 0 || index >= matchCount) {
+            throw new IndexOutOfBoundsException("index " + index + " out of bounds for " + matchCount);
+        }
+        currentIndex = index;
     }
 
     /**
@@ -109,6 +120,6 @@ public final class MatchNavigator {
      * @return {@code "k / n"} with 1-based {@code k}, or {@code "0 / 0"} without matches
      */
     public String positionLabel() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return hasMatches() ? (currentIndex + 1) + " / " + matchCount : "0 / 0";
     }
 }

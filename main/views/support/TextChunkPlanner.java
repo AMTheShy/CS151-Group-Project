@@ -1,5 +1,6 @@
 package views.support;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import models.AppConstants;
@@ -48,7 +49,7 @@ public final class TextChunkPlanner {
      * @return the chunk size
      */
     public int chunkSize() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return chunkSize;
     }
 
     /**
@@ -59,6 +60,15 @@ public final class TextChunkPlanner {
      * @throws IllegalArgumentException if {@code textLength < 0}
      */
     public List<MatchRange> chunks(int textLength) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        if (textLength < 0) {
+            throw new IllegalArgumentException("textLength must be >= 0 but was " + textLength);
+        }
+        List<MatchRange> chunks = new ArrayList<>();
+        for (int start = 0; start < textLength;) {
+            int end = start + Math.min(chunkSize, textLength - start);
+            chunks.add(new MatchRange(start, end));
+            start = end;
+        }
+        return List.copyOf(chunks);
     }
 }

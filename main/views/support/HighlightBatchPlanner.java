@@ -1,6 +1,8 @@
 package views.support;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import models.AppConstants;
 import models.MatchRange;
@@ -55,7 +57,7 @@ public final class HighlightBatchPlanner {
      * @return the batch size
      */
     public int batchSize() {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return batchSize;
     }
 
     /**
@@ -65,7 +67,7 @@ public final class HighlightBatchPlanner {
      * @return {@code matchCount <= AppConstants.MAX_EAGER_HIGHLIGHTS}
      */
     public boolean shouldHighlightEagerly(int matchCount) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        return matchCount <= AppConstants.MAX_EAGER_HIGHLIGHTS;
     }
 
     /**
@@ -77,7 +79,14 @@ public final class HighlightBatchPlanner {
      * @throws NullPointerException if {@code matches} is {@code null}
      */
     public List<List<MatchRange>> planBatches(List<MatchRange> matches) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(matches, "matches");
+        List<List<MatchRange>> batches = new ArrayList<>();
+        for (int start = 0; start < matches.size();) {
+            int end = start + Math.min(batchSize, matches.size() - start);
+            batches.add(matches.subList(start, end));
+            start = end;
+        }
+        return List.copyOf(batches);
     }
 
     /**
@@ -88,7 +97,21 @@ public final class HighlightBatchPlanner {
      * @return an index in {@code 0..matches.size()} ({@code size()} if none)
      */
     public int indexOfFirstEndingAfter(List<MatchRange> matches, int offset) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(matches, "matches");
+        if (offset < 0) {
+            throw new IllegalArgumentException("offset must be >= 0 but was " + offset);
+        }
+        int low = 0;
+        int high = matches.size();
+        while (low < high) {
+            int middle = low + (high - low) / 2;
+            if (matches.get(middle).end() <= offset) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
     }
 
     /**
@@ -102,6 +125,25 @@ public final class HighlightBatchPlanner {
      * @throws IllegalArgumentException if the window is invalid
      */
     public List<MatchRange> matchesIntersecting(List<MatchRange> matches, int fromOffset, int toOffset) {
-        throw new UnsupportedOperationException("TODO: Member B");
+        Objects.requireNonNull(matches, "matches");
+        if (fromOffset < 0 || toOffset < fromOffset) {
+            throw new IllegalArgumentException("invalid window: fromOffset " + fromOffset
+                    + ", toOffset " + toOffset);
+        }
+        if (fromOffset == toOffset) {
+            return matches.subList(0, 0);
+        }
+        int first = indexOfFirstEndingAfter(matches, fromOffset);
+        int low = first;
+        int high = matches.size();
+        while (low < high) {
+            int middle = low + (high - low) / 2;
+            if (matches.get(middle).start() < toOffset) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return matches.subList(first, low);
     }
 }

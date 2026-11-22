@@ -1,18 +1,22 @@
 package views.support;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.Disabled;
+import java.nio.file.Path;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.DocumentTitles;
 
 /**
  * Tests for {@code TitleSuggester}. Owner: Member B.
  *
- * <p>Cases B-52..B-56 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
+ * <p>Cases B-52..B-56 of {@code design/test-plan.md}.
+ * Tests retain fixed method names and display IDs from the test plan.
+ * Each test covers the corresponding scenario in its Javadoc.</p>
  */
 class TitleSuggesterTest {
 
@@ -24,10 +28,9 @@ class TitleSuggesterTest {
      * <p>Assert: 'notes'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-52 default title = file name without extension (D1)")
     void suggestTitle_txtFile_dropsExtension() {
-        fail("TODO: Member B - B-52");
+        assertEquals("notes", TitleSuggester.suggestTitle(Path.of("dir", "notes.txt")));
     }
 
     /**
@@ -38,10 +41,11 @@ class TitleSuggesterTest {
      * <p>Assert: 'archive.tar', 'README', 'notes'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-53 extension rules")
     void suggestTitle_multipleOrNoExtensions_dropsLastOnly() {
-        fail("TODO: Member B - B-53");
+        assertEquals("archive.tar", TitleSuggester.suggestTitle(Path.of("archive.tar.gz")));
+        assertEquals("README", TitleSuggester.suggestTitle(Path.of("README")));
+        assertEquals("notes", TitleSuggester.suggestTitle(Path.of("notes.")));
     }
 
     /**
@@ -52,10 +56,9 @@ class TitleSuggesterTest {
      * <p>Assert: '.bashrc'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-54 dot files")
     void suggestTitle_hiddenFile_keepsLeadingDot() {
-        fail("TODO: Member B - B-54");
+        assertEquals(".bashrc", TitleSuggester.suggestTitle(Path.of(".bashrc")));
     }
 
     /**
@@ -66,10 +69,12 @@ class TitleSuggesterTest {
      * <p>Assert: 200 chars, trimmed, DocumentTitles.isValid true.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-55 length and whitespace (D1)")
     void suggestTitle_longOrPaddedName_truncatedAndTrimmed() {
-        fail("TODO: Member B - B-55");
+        String title = TitleSuggester.suggestTitle(Path.of("  " + "x".repeat(250) + ".txt"));
+        assertEquals(200, title.length());
+        assertEquals(title.trim(), title);
+        assertTrue(DocumentTitles.isValid(title));
     }
 
     /**
@@ -80,9 +85,9 @@ class TitleSuggesterTest {
      * <p>Assert: 'caf_'.</p>
      */
     @Test
-    @Disabled("TODO: Member B")
     @DisplayName("B-56 always a valid suggestion")
     void suggestTitle_nonAsciiCharacters_replacedByUnderscore() {
-        fail("TODO: Member B - B-56");
+        assertEquals("caf_", TitleSuggester.suggestTitle(Path.of("caf\u00e9.txt")));
+        assertThrows(NullPointerException.class, () -> TitleSuggester.suggestTitle(null));
     }
 }
