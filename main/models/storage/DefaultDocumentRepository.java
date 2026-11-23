@@ -1,17 +1,21 @@
 package models.storage;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import models.AppConstants;
 import models.CancellationToken;
 import models.Document;
+import models.DocumentNotFoundException;
 import models.DocumentStorageException;
 import models.DuplicateTitleException;
 import models.LoadSummary;
@@ -75,7 +79,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
     private final ReentrantLock mutationLock = new ReentrantLock();
 
     /** Registered observers; copy-on-write because iteration (notify) is far more common than change. */
-    private final List<RepositoryListener> listeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<RepositoryListener> listeners = new CopyOnWriteArrayList<>();
 
     /**
      * Creates an empty repository backed by {@code store}. Does not touch the disk; call
@@ -99,7 +103,25 @@ public final class DefaultDocumentRepository implements DocumentRepository {
     @Override
     public Optional<Document> add(Document document, boolean replaceExisting)
             throws DuplicateTitleException, DocumentStorageException {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(document, "document");
+        String title = document.title();
+        mutationLock.lock();
+        try {
+            // everything here runs under the lock, so no other thread can add the same title
+            // between our check and our save (D2)
+            Document previous = documents.get(title);
+            if (previous != null && !replaceExisting) {
+                throw new DuplicateTitleException(title);
+            }
+            // disk first, memory second: if save throws, the map is never touched (A-06)
+            store.save(document);
+            documents.put(title, document);
+            // still holding the lock, so listeners get the updates in the right order (R9)
+            notifyListeners();
+            return Optional.ofNullable(previous);
+        } finally {
+            mutationLock.unlock();
+        }
     }
 
     /**
@@ -109,7 +131,8 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public Optional<Document> findByTitle(String title) {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(title, "title");
+        return Optional.ofNullable(documents.get(title));
     }
 
     /**
@@ -119,7 +142,8 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public boolean containsTitle(String title) {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(title, "title");
+        return documents.containsKey(title);
     }
 
     /**
@@ -129,7 +153,8 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public List<Document> listAllSortedByTitle() {
-        throw new UnsupportedOperationException("TODO: Member A");
+        // the map is already sorted, just copy it so nobody can change our snapshot
+        return List.copyOf(documents.values());
     }
 
     /**
@@ -139,7 +164,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public int size() {
-        throw new UnsupportedOperationException("TODO: Member A");
+        return documents.size();
     }
 
     /**
@@ -154,7 +179,45 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public List<String> removeAll(Collection<String> titles) throws DocumentStorageException {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(titles, "titles");
+        // copy the input so it cannot change while we loop
+        List<String> requested = List.copyOf(titles); // throws NullPointerException for null elements
+        List<String> removed = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        DocumentStorageException firstFailure = null;
+        mutationLock.lock();
+        try {
+            for (String title : requested) {
+                // already gone (maybe deleted by someone else), skip it
+                if (!documents.containsKey(title)) {
+                    continue;
+                }
+                try {
+                    store.delete(title);
+                    documents.remove(title);
+                    removed.add(title);
+                } catch (DocumentStorageException failure) {
+                    LOGGER.log(Level.WARNING, "Could not delete \"" + title + "\"", failure);
+                    // remember the failure but keep deleting the rest (A-08)
+                    failed.add(title);
+                    if (firstFailure == null) {
+                        firstFailure = failure;
+                    }
+                }
+            }
+            // one notification for the whole batch
+            if (!removed.isEmpty()) {
+                notifyListeners();
+            }
+        } finally {
+            mutationLock.unlock();
+        }
+        // throw only after unlocking
+        if (firstFailure != null) {
+            throw new DocumentStorageException("Could not delete " + quoteAll(failed) + ": "
+                    + withoutFinalPeriod(firstFailure.getMessage()) + ".", firstFailure);
+        }
+        return List.copyOf(removed);
     }
 
     /**
@@ -171,7 +234,36 @@ public final class DefaultDocumentRepository implements DocumentRepository {
     @Override
     public LoadSummary loadPersisted(ProgressListener progress, CancellationToken token)
             throws DocumentStorageException {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(progress, "progress");
+        Objects.requireNonNull(token, "token");
+        List<String> titles = store.listStoredTitles();
+        int total = titles.size();
+        int loadedCount = 0;
+        int skippedCount = 0;
+        List<String> problems = new ArrayList<>();
+        for (int index = 0; index < total; index++) {
+            token.throwIfCancelled();
+            String title = titles.get(index);
+            // the user already imported this title while we were loading, theirs is newer (R6)
+            if (documents.containsKey(title)) {
+                skippedCount++;
+            } else {
+                try {
+                    Document persisted = store.load(title); // slow I/O, deliberately outside the lock (R6)
+                    if (insertIfAbsent(persisted)) {
+                        loadedCount++;
+                    } else {
+                        skippedCount++;
+                    }
+                } catch (DocumentNotFoundException | DocumentStorageException failure) {
+                    LOGGER.log(Level.WARNING, "Skipping persisted document \"" + title + "\"", failure);
+                    // one broken file should not stop the whole startup
+                    problems.add(title + ": " + failure.getMessage());
+                }
+            }
+            progress.onProgress(index + 1, total);
+        }
+        return new LoadSummary(loadedCount, skippedCount, problems);
     }
 
     /**
@@ -181,7 +273,8 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public void addRepositoryListener(RepositoryListener listener) {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(listener, "listener");
+        listeners.addIfAbsent(listener);
     }
 
     /**
@@ -191,7 +284,8 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public void removeRepositoryListener(RepositoryListener listener) {
-        throw new UnsupportedOperationException("TODO: Member A");
+        Objects.requireNonNull(listener, "listener");
+        listeners.remove(listener);
     }
 
     /**
@@ -200,6 +294,62 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      * and does not prevent the other listeners from being notified.
      */
     private void notifyListeners() {
-        throw new UnsupportedOperationException("TODO: Member A");
+        List<Document> snapshot = List.copyOf(documents.values());
+        for (RepositoryListener listener : listeners) {
+            try {
+                listener.onDocumentsChanged(snapshot);
+            } catch (RuntimeException failure) {
+                // a broken listener should not break the save, just log it
+                LOGGER.log(Level.WARNING, "A repository listener failed; continuing with the others", failure);
+            }
+        }
+    }
+
+    /**
+     * Inserts a persisted document under {@link #mutationLock} if its title is still absent, and
+     * notifies listeners when it was inserted. A document the user imported meanwhile wins (R6).
+     *
+     * @param persisted the document loaded from the store
+     * @return {@code true} if inserted, {@code false} if the title was taken in the meantime
+     */
+    private boolean insertIfAbsent(Document persisted) {
+        mutationLock.lock();
+        try {
+            // only add it if the user did not import the same title in the meantime
+            if (documents.putIfAbsent(persisted.title(), persisted) != null) {
+                return false;
+            }
+            notifyListeners();
+            return true;
+        } finally {
+            mutationLock.unlock();
+        }
+    }
+
+    /**
+     * Formats titles for messages: {@code "A", "B"}.
+     *
+     * @param titles the titles
+     * @return the quoted, comma-separated titles
+     */
+    private static String quoteAll(List<String> titles) {
+        StringJoiner joiner = new StringJoiner(", ");
+        for (String title : titles) {
+            joiner.add("\"" + title + "\"");
+        }
+        return joiner.toString();
+    }
+
+    /**
+     * Removes one trailing period so that a full-sentence cause can be embedded in another sentence.
+     *
+     * @param message the message, possibly {@code null}
+     * @return the message without a final period; empty text for {@code null}
+     */
+    private static String withoutFinalPeriod(String message) {
+        if (message == null) {
+            return "";
+        }
+        return message.endsWith(".") ? message.substring(0, message.length() - 1) : message;
     }
 }
