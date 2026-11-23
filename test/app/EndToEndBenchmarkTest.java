@@ -1,67 +1,109 @@
 package app;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import models.ImportState;
+import models.SearchQuery;
 import testsupport.ImmediateUiDispatcher;
+import testsupport.RecordingLibraryListener;
+import testsupport.RecordingSearchListener;
+import testsupport.TestDocuments;
 
-/**
- * Tests for {@code LocalSearchEngineApp.wire (real A + B + C)}. Owner: Member C.
- *
- * <p>Cases I-10..I-11 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
- */
+@Tag("benchmark")
 class EndToEndBenchmarkTest {
+
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     @TempDir
     Path tempDir;
 
     private LocalSearchEngineApp.Components components;
 
-    /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
-        components = LocalSearchEngineApp.wire(tempDir.resolve("documents"), new ImmediateUiDispatcher());
+        components = LocalSearchEngineApp.wire(
+                tempDir.resolve("documents"), new ImmediateUiDispatcher());
     }
 
-    /**
-     * I-10: 100 MB search &lt;= 1 s (3.4) [benchmark].
-     *
-     * <p>Arrange: 20 x 5 MB generated documents imported; 2 warm-up searches; query 'computer
-     * algorithm'.</p>
-     * <p>Act: search.</p>
-     * <p>Assert: time from startSearch to onSearchCompleted &lt;= 1000 ms (median of 3).</p>
-     */
+    @AfterEach
+    void shutDown() {
+        if (components != null) {
+            components.lifecycle().shutdown();
+        }
+    }
+
     @Test
-    @Tag("benchmark")
-    @Disabled("TODO: Member C")
     @DisplayName("I-10 100 MB search <= 1 s (3.4)")
-    void search_hundredMegabyteCorpus_completesWithinOneSecond() {
-        fail("TODO: Member C - I-10");
+    void search_hundredMegabyteCorpus_completesWithinOneSecond() throws Exception {
+        Path source = TestDocuments.writeAsciiFile(
+                tempDir, "corpus.txt", "a".repeat(5 * 1024 * 1024));
+
+        for (int i = 0; i < 20; i++) {
+            importAndMeasure(source, "Doc " + i);
+        }
+
+        measureSearch();
+        measureSearch();
+
+        long[] elapsed = {measureSearch(), measureSearch(), measureSearch()};
+        Arrays.sort(elapsed);
+
+        assertTrue(elapsed[1] <= TimeUnit.SECONDS.toNanos(1),
+                "Median: " + TimeUnit.NANOSECONDS.toMillis(elapsed[1]) + " ms");
     }
 
-    /**
-     * I-11: 5 MB import &lt;= 1 s (3.4) [benchmark].
-     *
-     * <p>Arrange: 5 MB generated file.</p>
-     * <p>Act: import.</p>
-     * <p>Assert: time from importDocument to COMPLETED &lt;= 1000 ms.</p>
-     */
     @Test
-    @Tag("benchmark")
-    @Disabled("TODO: Member C")
     @DisplayName("I-11 5 MB import <= 1 s (3.4)")
-    void import_fiveMegabyteFile_completesWithinOneSecond() {
-        fail("TODO: Member C - I-11");
+    void import_fiveMegabyteFile_completesWithinOneSecond() throws Exception {
+        Path source = TestDocuments.writeAsciiFile(
+                tempDir, "large.txt", "a".repeat(5 * 1024 * 1024));
+
+        long elapsed = importAndMeasure(source, "Large");
+
+        assertTrue(elapsed <= TimeUnit.SECONDS.toNanos(1),
+                "Import: " + TimeUnit.NANOSECONDS.toMillis(elapsed) + " ms");
+    }
+
+    private long importAndMeasure(Path source, String title) throws InterruptedException {
+        var events = new RecordingLibraryListener();
+        components.library().addLibraryListener(events);
+        try {
+            long start = System.nanoTime();
+            long id = components.library().importDocument(source, title, false);
+
+            assertTrue(events.await(listener -> listener.isTerminal(id), TIMEOUT));
+            long elapsed = System.nanoTime() - start;
+
+            var progress = events.progressOf(id);
+            assertEquals(ImportState.COMPLETED, progress.get(progress.size() - 1).state());
+            return elapsed;
+        } finally {
+            components.library().removeLibraryListener(events);
+        }
+    }
+
+    private long measureSearch() throws InterruptedException {
+        var results = new RecordingSearchListener();
+        long start = System.nanoTime();
+
+        components.search().startSearch(SearchQuery.of("computer algorithm"), results);
+        assertTrue(results.awaitCallback(TIMEOUT));
+
+        long elapsed = System.nanoTime() - start;
+        assertTrue(results.failures().isEmpty());
+        assertEquals(1, results.completions().size());
+        return elapsed;
     }
 }

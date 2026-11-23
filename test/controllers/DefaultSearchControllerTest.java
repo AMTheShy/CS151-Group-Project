@@ -1,41 +1,31 @@
 package controllers;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import controllers.concurrency.ManualTaskScheduler;
+import models.DocumentSearchResult;
+import models.SearchQuery;
 import testsupport.FakeDocumentRepository;
 import testsupport.FakeSearchEngine;
 import testsupport.QueueingUiDispatcher;
 import testsupport.RecordingSearchListener;
+import testsupport.TestDocuments;
 
-/**
- * Tests for {@code DefaultSearchController}. Owner: Member C.
- *
- * <p>Cases C-18..C-30 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
- */
 class DefaultSearchControllerTest {
 
     private FakeDocumentRepository repository;
-
     private FakeSearchEngine engine;
-
     private ManualTaskScheduler scheduler;
-
     private QueueingUiDispatcher uiDispatcher;
-
     private RecordingSearchListener listener;
-
     private DefaultSearchController controller;
 
-    /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
         repository = new FakeDocumentRepository();
@@ -46,185 +36,172 @@ class DefaultSearchControllerTest {
         controller = new DefaultSearchController(repository, engine, scheduler, uiDispatcher);
     }
 
-    /**
-     * C-18: non-blocking search (U3) [unit].
-     *
-     * <p>Arrange: 2 documents; startSearch; do not run tasks.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: handle not done; engine not called; no callback.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-18 non-blocking search (U3)")
     void startSearch_returnsImmediately_notDoneAndNoCallback() {
-        fail("TODO: Member C - C-18");
+        put("Alpha", "needle");
+        SearchHandle handle = start();
+        assertFalse(handle.isDone());
+        assertEquals(0, listener.callbackCount());
+        assertEquals(1, scheduler.pendingCount());
     }
 
-    /**
-     * C-19: snapshot at start (S5) [unit].
-     *
-     * <p>Arrange: 'A' present; startSearch; then repository.putDirectly('B'); runAll; flush.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: results contain only A.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-19 snapshot at start (S5)")
     void startSearch_documentAddedAfterStart_notInResults() {
-        fail("TODO: Member C - C-19");
+        put("Alpha", "needle");
+        start();
+        put("Beta", "needle");
+        finish();
+        assertEquals(List.of("Alpha"), titles(listener));
     }
 
-    /**
-     * C-20: deleted during search stays (S5) [unit].
-     *
-     * <p>Arrange: 'A','B' match; startSearch; repository.removeAll([A]); runAll; flush.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: results contain A and B; A is the original snapshot.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-20 deleted during search stays (S5)")
     void startSearch_documentRemovedDuringSearch_stillInResults() {
-        fail("TODO: Member C - C-20");
+        put("Alpha", "needle");
+        start();
+        assertDoesNotThrow(() -> repository.removeAll(List.of("Alpha")));
+        finish();
+        assertEquals(List.of("Alpha"), titles(listener));
     }
 
-    /**
-     * C-21: results sorted, only matches (U4, D6) [unit].
-     *
-     * <p>Arrange: documents 'b' (match), 'A' (match), 'c' (no match).</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: exactly one onSearchCompleted with titles [A, b].</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-21 results sorted, only matches (U4, D6)")
     void startSearch_mixedDocuments_onlyMatchesSortedInOneCallback() {
-        fail("TODO: Member C - C-21");
+        put("Zulu", "needle");
+        put("Alpha", "needle");
+        put("Middle", "unrelated");
+        start();
+        finish();
+        assertEquals(List.of("Alpha", "Zulu"), titles(listener));
+        assertEquals(1, listener.callbackCount());
+        assertThrows(UnsupportedOperationException.class,
+                () -> listener.completions().get(0).clear());
     }
 
-    /**
-     * C-22: zero results [unit].
-     *
-     * <p>Arrange: documents without matches; also empty repository.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: onSearchCompleted(empty list) for both.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-22 zero results")
     void startSearch_noMatches_completesWithEmptyList() {
-        fail("TODO: Member C - C-22");
+        put("Alpha", "unrelated");
+        start();
+        finish();
+        assertEquals(1, listener.callbackCount());
+        assertTrue(titles(listener).isEmpty());
     }
 
-    /**
-     * C-23: close tab during search (U3) [unit].
-     *
-     * <p>Arrange: startSearch; handle.cancel(); runAll; flush.</p>
-     * <p>Act: cancel.</p>
-     * <p>Assert: callbackCount 0; isDone true; isCancelled true.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-23 close tab during search (U3)")
     void cancel_beforeTasksRun_neverCallsListener() {
-        fail("TODO: Member C - C-23");
+        put("Alpha", "needle");
+        start().cancel();
+        finish();
+        assertEquals(0, listener.callbackCount());
+        assertTrue(engine.searchedTitles().isEmpty());
     }
 
-    /**
-     * C-24: race R5: results queued for EDT, then tab closed [unit].
-     *
-     * <p>Arrange: startSearch; runAll (delivery queued); handle.cancel(); flush.</p>
-     * <p>Act: cancel.</p>
-     * <p>Assert: callbackCount 0.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-24 race R5: results queued for EDT, then tab closed")
     void cancel_afterResultsComputedBeforeDispatch_neverCallsListener() {
-        fail("TODO: Member C - C-24");
+        put("Alpha", "needle");
+        SearchHandle handle = start();
+        scheduler.runAll();
+        assertEquals(1, uiDispatcher.pendingCount());
+        handle.cancel();
+        uiDispatcher.flush();
+        assertEquals(0, listener.callbackCount());
     }
 
-    /**
-     * C-25: engine failure [unit].
-     *
-     * <p>Arrange: engine.failOn('B', RuntimeException('boom')).</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: one onSearchFailed containing 'boom'; no onSearchCompleted.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-25 engine failure")
     void startSearch_engineThrows_reportsFailureOnce() {
-        fail("TODO: Member C - C-25");
+        put("Alpha", "needle");
+        put("Beta", "needle");
+        engine.failOn("Beta", new IllegalStateException("broken engine"));
+        start();
+        finish();
+        assertEquals(List.of("Search failed: broken engine"), listener.failures());
+        assertTrue(listener.completions().isEmpty());
     }
 
-    /**
-     * C-26: per-document parallelism (4.4) [unit].
-     *
-     * <p>Arrange: 3 documents.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: scheduler.searchTaskCount() 3.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-26 per-document parallelism (4.4)")
     void startSearch_threeDocuments_submitsOneSearchTaskPerDocument() {
-        fail("TODO: Member C - C-26");
+        put("A", "needle");
+        put("B", "needle");
+        put("C", "needle");
+        start();
+        assertEquals(3, scheduler.searchTaskCount());
     }
 
-    /**
-     * C-27: cancellation reaches the engine [unit].
-     *
-     * <p>Arrange: engine hook cancels handle while first document is searched.</p>
-     * <p>Act: cancel.</p>
-     * <p>Assert: token seen by engine isCancelled; no callback.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-27 cancellation reaches the engine")
     void cancel_runningSearch_setsTokenObservedByEngine() {
-        fail("TODO: Member C - C-27");
+        put("Alpha", "needle");
+        SearchHandle handle = start();
+        engine.setBeforeSearchHook(document -> handle.cancel());
+        finish();
+        assertTrue(engine.tokensSeen().get(0).isCancelled());
+        assertEquals(0, listener.callbackCount());
     }
 
-    /**
-     * C-28: handle state [unit].
-     *
-     * <p>Arrange: complete one search, fail another.</p>
-     * <p>Act: isDone.</p>
-     * <p>Assert: isDone true for both; isCancelled false.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-28 handle state")
     void isDone_afterCompletionOrFailure_isTrue() {
-        fail("TODO: Member C - C-28");
+        put("Alpha", "needle");
+        SearchHandle success = start();
+        finish();
+        engine.failOn("Alpha", new IllegalStateException("bad"));
+        SearchHandle failure = start();
+        finish();
+        assertTrue(success.isDone());
+        assertTrue(failure.isDone());
+        assertFalse(failure.isCancelled());
     }
 
-    /**
-     * C-29: independent tabs [unit].
-     *
-     * <p>Arrange: two queries, two listeners; run tasks interleaved.</p>
-     * <p>Act: startSearch.</p>
-     * <p>Assert: each listener gets its own query's results exactly once.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-29 independent tabs")
     void startSearch_twoConcurrentSearches_resultsGoToOwnListeners() {
-        fail("TODO: Member C - C-29");
+        put("Alpha", "needle");
+        put("Beta", "other");
+        RecordingSearchListener second = new RecordingSearchListener();
+        start();
+        controller.startSearch(SearchQuery.of("other"), second);
+        finish();
+        assertEquals(List.of("Alpha"), titles(listener));
+        assertEquals(List.of("Beta"), titles(second));
     }
 
-    /**
-     * C-30: shutdown cancels searches (R8) [unit].
-     *
-     * <p>Arrange: two running searches; cancelAll; runAll; flush.</p>
-     * <p>Act: cancelAll.</p>
-     * <p>Assert: no callbacks; both handles cancelled.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-30 shutdown cancels searches (R8)")
     void cancelAll_activeSearches_allCancelled() {
-        fail("TODO: Member C - C-30");
+        put("Alpha", "needle");
+        SearchHandle first = start();
+        SearchHandle second = start();
+        controller.cancelAll();
+        finish();
+        assertTrue(first.isCancelled());
+        assertTrue(second.isCancelled());
+        assertEquals(0, listener.callbackCount());
+        assertThrows(IllegalStateException.class, this::start);
+    }
+
+    private void put(String title, String text) {
+        repository.putDirectly(TestDocuments.document(title, text));
+    }
+
+    private SearchHandle start() {
+        return controller.startSearch(SearchQuery.of("needle"), listener);
+    }
+
+    private void finish() {
+        scheduler.runAll();
+        uiDispatcher.flush();
+    }
+
+    private static List<String> titles(RecordingSearchListener target) {
+        return target.completions().get(0).stream()
+                .map(DocumentSearchResult::title)
+                .toList();
     }
 }
