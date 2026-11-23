@@ -1,9 +1,13 @@
 package views;
 
+import java.nio.file.Path;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 import controllers.DocumentLibraryController;
+import models.DocumentTitles;
+import views.support.TitleSuggester;
 
 /**
  * The interactive part of File &rarr; Import... (UC1, D1, D2, U2): everything that needs the user
@@ -55,6 +59,32 @@ public final class ImportWorkflow {
      * @return the import id if an import was started, otherwise empty (user cancelled)
      */
     public OptionalLong run() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Optional<Path> chosen = dialogs.chooseFileToImport();
+        if (chosen.isEmpty()) {
+            return OptionalLong.empty();
+        }
+        Path file = chosen.get();
+        String input = TitleSuggester.suggestTitle(file);
+        Optional<String> error = Optional.empty();
+        while (true) {
+            Optional<String> raw = dialogs.askTitle(input, error);
+            if (raw.isEmpty()) {
+                return OptionalLong.empty();
+            }
+            input = raw.get();
+            error = DocumentTitles.validate(input);
+            if (error.isEmpty()) {
+                break;
+            }
+        }
+        String title = DocumentTitles.normalize(input);
+        boolean replace = false;
+        if (libraryController.isTitleTaken(title)) {
+            if (!dialogs.confirmOverwriteDocument(title)) {
+                return OptionalLong.empty();
+            }
+            replace = true;
+        }
+        return OptionalLong.of(libraryController.importDocument(file, title, replace));
     }
 }

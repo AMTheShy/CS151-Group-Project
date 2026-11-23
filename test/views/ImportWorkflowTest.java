@@ -1,13 +1,20 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+import java.util.OptionalLong;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import testsupport.FakeDocumentLibraryController.ImportRequest;
 import testsupport.FakeDocumentLibraryController;
+import views.ScriptedDialogService.Question;
 
 /**
  * Tests for {@code ImportWorkflow}. Owner: Member D.
@@ -41,10 +48,18 @@ class ImportWorkflowTest {
      * <p>Assert: returns empty; no import request; title never asked.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-16 cancel at file chooser")
     void run_fileChooserCancelled_startsNothing() {
-        fail("TODO: Member D - D-16");
+        // Arrange
+        dialogs.answerFileToImport(Optional.empty());
+
+        // Act
+        OptionalLong importId = workflow.run();
+
+        // Assert
+        assertTrue(importId.isEmpty());
+        assertEquals(List.of(), controller.importRequests());
+        assertEquals(List.of(), dialogs.questionsOf("askTitle"));
     }
 
     /**
@@ -55,10 +70,20 @@ class ImportWorkflowTest {
      * <p>Assert: askTitle got 'notes'; import request ('notes', replace=false).</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-17 default title (D1)")
     void run_acceptDefaultTitle_importsWithSuggestedTitle() {
-        fail("TODO: Member D - D-17");
+        // Arrange
+        Path file = Path.of("dir", "notes.txt");
+        dialogs.answerFileToImport(Optional.of(file)).answerTitle(Optional.of("notes"));
+
+        // Act
+        OptionalLong importId = workflow.run();
+
+        // Assert
+        assertTrue(importId.isPresent());
+        assertEquals(List.of("notes", ""), dialogs.questionsOf("askTitle").get(0).arguments());
+        assertEquals(List.of(new ImportRequest(importId.getAsLong(), file, "notes", false)),
+                controller.importRequests());
     }
 
     /**
@@ -69,10 +94,23 @@ class ImportWorkflowTest {
      * <p>Assert: second askTitle carries the 'empty' error; import title 'Good'.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-18 title validation loop (D1)")
     void run_invalidTitle_reAsksWithErrorMessage() {
-        fail("TODO: Member D - D-18");
+        // Arrange
+        dialogs.answerFileToImport(Optional.of(Path.of("notes.txt")))
+                .answerTitle(Optional.of("   "))
+                .answerTitle(Optional.of("Good"));
+
+        // Act
+        workflow.run();
+
+        // Assert
+        List<Question> asked = dialogs.questionsOf("askTitle");
+        assertEquals(2, asked.size());
+        assertEquals("", asked.get(0).arguments().get(1));
+        assertEquals("   ", asked.get(1).arguments().get(0));
+        assertTrue(asked.get(1).arguments().get(1).contains("empty"), asked.get(1).arguments().get(1));
+        assertEquals("Good", controller.importRequests().get(0).title());
     }
 
     /**
@@ -83,10 +121,21 @@ class ImportWorkflowTest {
      * <p>Assert: import request replace=true.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-19 overwrite confirmation (D2)")
     void run_takenTitleConfirmed_importsWithReplace() {
-        fail("TODO: Member D - D-19");
+        // Arrange
+        controller.markTitleTaken("notes");
+        dialogs.answerFileToImport(Optional.of(Path.of("notes.txt")))
+                .answerTitle(Optional.of("notes"))
+                .answerConfirmOverwriteDocument(true);
+
+        // Act
+        workflow.run();
+
+        // Assert
+        assertEquals(List.of("notes"), dialogs.questionsOf("confirmOverwriteDocument").get(0).arguments());
+        assertEquals(1, controller.importRequests().size());
+        assertTrue(controller.importRequests().get(0).replaceExisting());
     }
 
     /**
@@ -97,9 +146,19 @@ class ImportWorkflowTest {
      * <p>Assert: returns empty; no import request.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-20 overwrite declined (D2)")
     void run_takenTitleDeclined_startsNothing() {
-        fail("TODO: Member D - D-20");
+        // Arrange
+        controller.markTitleTaken("notes");
+        dialogs.answerFileToImport(Optional.of(Path.of("notes.txt")))
+                .answerTitle(Optional.of("notes"))
+                .answerConfirmOverwriteDocument(false);
+
+        // Act
+        OptionalLong importId = workflow.run();
+
+        // Assert
+        assertTrue(importId.isEmpty());
+        assertEquals(List.of(), controller.importRequests());
     }
 }

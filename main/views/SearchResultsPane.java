@@ -1,13 +1,17 @@
 package views;
 
+import java.awt.CardLayout;
 import java.util.Objects;
 
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingConstants;
 
 import controllers.DocumentLibraryController;
 import controllers.SearchController;
 import models.SearchQuery;
+import views.support.TabTitleFormatter;
 
 /**
  * Right side of the main window (U1, U3): a {@code JTabbedPane} with one closable tab per search.
@@ -36,6 +40,15 @@ public final class SearchResultsPane extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
+    /** Hint shown while no tab is open. */
+    static final String HINT_TEXT = "Use Search \u2192 Search By... to search";
+
+    /** Card name of the hint. */
+    private static final String HINT_CARD = "hint";
+
+    /** Card name of the tabbed pane. */
+    private static final String TABS_CARD = "tabs";
+
     /** Starts searches. */
     private final transient SearchController searchController;
 
@@ -47,6 +60,9 @@ public final class SearchResultsPane extends JPanel {
 
     /** One tab per search. */
     private final JTabbedPane tabbedPane = new JTabbedPane();
+
+    /** Switches between the hint and the tabbed pane. */
+    private final CardLayout cardLayout = new CardLayout();
 
     /**
      * Creates the pane with no tabs.
@@ -61,7 +77,11 @@ public final class SearchResultsPane extends JPanel {
         this.searchController = Objects.requireNonNull(searchController, "searchController");
         this.libraryController = Objects.requireNonNull(libraryController, "libraryController");
         this.dialogs = Objects.requireNonNull(dialogs, "dialogs");
-        // TODO: Member D - layout (CardLayout: hint label vs. tabbed pane)
+        setLayout(cardLayout);
+        add(new JLabel(HINT_TEXT, SwingConstants.CENTER), HINT_CARD);
+        add(tabbedPane, TABS_CARD);
+        tabbedPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        showCard();
     }
 
     /**
@@ -71,7 +91,18 @@ public final class SearchResultsPane extends JPanel {
      * @return the new tab
      */
     public SearchTabPanel openSearch(SearchQuery query) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(query, "query");
+        DocumentReaderPanel reader = new DocumentReaderPanel(new DownloadWorkflow(libraryController, dialogs));
+        SearchTabPanel tab = new SearchTabPanel(query, reader);
+        tabbedPane.addTab(TabTitleFormatter.tabTitle(query), tab);
+        int index = tabbedPane.indexOfComponent(tab);
+        tabbedPane.setTabComponentAt(index, new ClosableTabHeader(TabTitleFormatter.tabTitle(query),
+                TabTitleFormatter.tooltip(query), () -> closeTab(tab)));
+        tabbedPane.setToolTipTextAt(index, TabTitleFormatter.tooltip(query));
+        tabbedPane.setSelectedIndex(index);
+        showCard();
+        tab.attachHandle(searchController.startSearch(query, tab));
+        return tab;
     }
 
     /**
@@ -80,7 +111,10 @@ public final class SearchResultsPane extends JPanel {
      * @param tab a tab of this pane, not {@code null}
      */
     public void closeTab(SearchTabPanel tab) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(tab, "tab");
+        tab.cancelSearch();
+        tabbedPane.remove(tab);
+        showCard();
     }
 
     /**
@@ -89,7 +123,12 @@ public final class SearchResultsPane extends JPanel {
      * @return tab count
      */
     public int tabCount() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return tabbedPane.getTabCount();
+    }
+
+    /** Shows the tabbed pane if any tab is open, otherwise the hint. */
+    private void showCard() {
+        cardLayout.show(this, tabbedPane.getTabCount() == 0 ? HINT_CARD : TABS_CARD);
     }
 
     /**

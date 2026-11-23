@@ -1,11 +1,21 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static views.SwingTestSupport.result;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.swing.event.ListDataEvent;
+import javax.swing.event.ListDataListener;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.DocumentSearchResult;
 
 /**
  * Tests for {@code SearchResultComboBoxModel}. Owner: Member D.
@@ -33,10 +43,20 @@ class SearchResultComboBoxModelTest {
      * <p>Assert: getSize 2; elements in order; getSelectedItem null.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-07 only matching docs listed (U4)")
     void setResults_twoResults_exposedInOrderWithoutSelection() {
-        fail("TODO: Member D - D-07");
+        // Arrange
+        DocumentSearchResult first = result("A", "x needle y", "needle");
+        DocumentSearchResult second = result("b", "needle", "needle");
+
+        // Act
+        model.setResults(List.of(first, second));
+
+        // Assert
+        assertEquals(2, model.getSize());
+        assertSame(first, model.getElementAt(0));
+        assertSame(second, model.getElementAt(1));
+        assertNull(model.getSelectedItem());
     }
 
     /**
@@ -47,10 +67,38 @@ class SearchResultComboBoxModelTest {
      * <p>Assert: selected element 1; contentsChanged fired; foreign object ignored.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-08 selection events")
     void setSelectedItem_element_selectsAndNotifies() {
-        fail("TODO: Member D - D-08");
+        // Arrange
+        DocumentSearchResult first = result("A", "needle", "needle");
+        DocumentSearchResult second = result("B", "needle", "needle");
+        model.setResults(List.of(first, second));
+        List<ListDataEvent> events = new ArrayList<>();
+        model.addListDataListener(new ListDataListener() {
+            @Override
+            public void intervalAdded(ListDataEvent event) {
+                events.add(event);
+            }
+
+            @Override
+            public void intervalRemoved(ListDataEvent event) {
+                events.add(event);
+            }
+
+            @Override
+            public void contentsChanged(ListDataEvent event) {
+                events.add(event);
+            }
+        });
+
+        // Act
+        model.setSelectedItem(second);
+        model.setSelectedItem("foreign object");
+
+        // Assert
+        assertSame(second, model.getSelectedItem());
+        assertEquals(1, events.size());
+        assertEquals(ListDataEvent.CONTENTS_CHANGED, events.get(0).getType());
     }
 
     /**
@@ -61,9 +109,18 @@ class SearchResultComboBoxModelTest {
      * <p>Assert: getSize 0; getSelectedItem null.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-09 zero results")
     void setResults_emptyAfterSelection_clearsSelection() {
-        fail("TODO: Member D - D-09");
+        // Arrange
+        DocumentSearchResult first = result("A", "needle", "needle");
+        model.setResults(List.of(first));
+        model.setSelectedItem(first);
+
+        // Act
+        model.setResults(List.of());
+
+        // Assert
+        assertEquals(0, model.getSize());
+        assertNull(model.getSelectedItem());
     }
 }

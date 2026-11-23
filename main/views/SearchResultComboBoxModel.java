@@ -1,6 +1,7 @@
 package views;
 
 import java.util.List;
+import java.util.Objects;
 
 import javax.swing.AbstractListModel;
 import javax.swing.ComboBoxModel;
@@ -44,7 +45,17 @@ public final class SearchResultComboBoxModel extends AbstractListModel<DocumentS
      * @param sortedResults the results, not {@code null}
      */
     public void setResults(List<DocumentSearchResult> sortedResults) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(sortedResults, "sortedResults");
+        int oldSize = results.size();
+        results = List.copyOf(sortedResults);
+        selectedItem = null;
+        if (oldSize > 0) {
+            fireIntervalRemoved(this, 0, oldSize - 1);
+        }
+        fireContentsChanged(this, -1, -1);
+        if (!results.isEmpty()) {
+            fireIntervalAdded(this, 0, results.size() - 1);
+        }
     }
 
     /**
@@ -53,17 +64,17 @@ public final class SearchResultComboBoxModel extends AbstractListModel<DocumentS
      * @return immutable list
      */
     public List<DocumentSearchResult> results() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return results;
     }
 
     @Override
     public int getSize() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return results.size();
     }
 
     @Override
     public DocumentSearchResult getElementAt(int index) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return results.get(index);
     }
 
     /**
@@ -74,11 +85,18 @@ public final class SearchResultComboBoxModel extends AbstractListModel<DocumentS
      */
     @Override
     public void setSelectedItem(Object item) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        if (item != null && !results.contains(item)) {
+            return;
+        }
+        if (Objects.equals(selectedItem, item)) {
+            return;
+        }
+        selectedItem = item;
+        fireContentsChanged(this, -1, -1);
     }
 
     @Override
     public Object getSelectedItem() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return selectedItem;
     }
 }

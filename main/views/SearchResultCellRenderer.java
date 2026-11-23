@@ -1,13 +1,20 @@
 package views;
 
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.util.Objects;
 
+import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.ListCellRenderer;
 
 import models.DocumentSearchResult;
+import models.Snippet;
 
 /**
  * Two-column cell renderer of the search drop-down (U4, original UC2 "title | snippet of the first
@@ -29,6 +36,15 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
     /** Preferred width of the title column in pixels. */
     static final int TITLE_COLUMN_WIDTH = 220;
 
+    /** Text shown when no result is selected. */
+    static final String NOTHING_SELECTED_TEXT = "Select a document";
+
+    /** Gap between the two columns in pixels. */
+    private static final int CELL_GAP = 8;
+
+    /** Padding around a cell in pixels. */
+    private static final int CELL_PADDING = 2;
+
     /** The reused cell component. */
     private final JPanel cellPanel = new JPanel();
 
@@ -38,9 +54,15 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
     /** Shows the snippet with the match in bold. */
     private final JLabel snippetLabel = new JLabel();
 
-    /** Creates the renderer. The layout is assembled lazily by the implementation. */
+    /** Creates the renderer and assembles its reusable cell component. */
     public SearchResultCellRenderer() {
-        // TODO: Member D - lay out titleLabel (WEST) and snippetLabel (CENTER) in cellPanel
+        cellPanel.setLayout(new BorderLayout(CELL_GAP, 0));
+        cellPanel.setOpaque(true);
+        cellPanel.setBorder(BorderFactory.createEmptyBorder(CELL_PADDING, CELL_PADDING, CELL_PADDING, CELL_PADDING));
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
+        titleLabel.setPreferredSize(new Dimension(TITLE_COLUMN_WIDTH, titleLabel.getPreferredSize().height));
+        cellPanel.add(titleLabel, BorderLayout.WEST);
+        cellPanel.add(snippetLabel, BorderLayout.CENTER);
     }
 
     /** {@inheritDoc} Test: D-33. */
@@ -48,7 +70,20 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
     public Component getListCellRendererComponent(JList<? extends DocumentSearchResult> list,
                                                   DocumentSearchResult value, int index,
                                                   boolean isSelected, boolean cellHasFocus) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        if (value == null) {
+            titleLabel.setText(NOTHING_SELECTED_TEXT);
+            snippetLabel.setText("");
+        } else {
+            titleLabel.setText(value.title());
+            snippetLabel.setText(snippetHtml(value));
+        }
+        Color background = isSelected ? list.getSelectionBackground() : list.getBackground();
+        Color foreground = isSelected ? list.getSelectionForeground() : list.getForeground();
+        cellPanel.setBackground(background);
+        titleLabel.setForeground(foreground);
+        snippetLabel.setForeground(foreground);
+        cellPanel.setEnabled(list.isEnabled());
+        return cellPanel;
     }
 
     /**
@@ -58,7 +93,45 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
      * @return HTML starting with {@code <html>}
      */
     static String snippetHtml(DocumentSearchResult result) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(result, "result");
+        Snippet snippet = result.snippet();
+        String text = snippet.text();
+        int start = snippet.highlight().start();
+        int end = snippet.highlight().end();
+        return "<html>" + escapeHtml(text.substring(0, start))
+                + "<b>" + escapeHtml(text.substring(start, end)) + "</b>"
+                + escapeHtml(text.substring(end)) + "</html>";
+    }
+
+    /**
+     * Escapes {@code & < > "} so that user text can be embedded in Swing HTML.
+     *
+     * @param text the raw text, not {@code null}
+     * @return the escaped text
+     */
+    static String escapeHtml(String text) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int index = 0; index < text.length(); index++) {
+            char character = text.charAt(index);
+            switch (character) {
+                case '&':
+                    escaped.append("&amp;");
+                    break;
+                case '<':
+                    escaped.append("&lt;");
+                    break;
+                case '>':
+                    escaped.append("&gt;");
+                    break;
+                case '"':
+                    escaped.append("&quot;");
+                    break;
+                default:
+                    escaped.append(character);
+                    break;
+            }
+        }
+        return escaped.toString();
     }
 
     /**

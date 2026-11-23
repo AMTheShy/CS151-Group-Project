@@ -1,11 +1,17 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.SearchQuery;
+import views.ScriptedDialogService.Question;
 
 /**
  * Tests for {@code SearchQueryWorkflow}. Owner: Member D.
@@ -36,10 +42,16 @@ class SearchQueryWorkflowTest {
      * <p>Assert: SearchQuery text 'Computer  Algorithm'.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-25 query entry (UC2, S2)")
     void promptForQuery_validInput_returnsNormalizedQuery() {
-        fail("TODO: Member D - D-25");
+        // Arrange
+        dialogs.answerSearchQuery(Optional.of("  Computer  Algorithm "));
+
+        // Act
+        Optional<SearchQuery> query = workflow.promptForQuery();
+
+        // Assert
+        assertEquals("Computer  Algorithm", query.orElseThrow().text());
     }
 
     /**
@@ -50,10 +62,20 @@ class SearchQueryWorkflowTest {
      * <p>Assert: second ask carries error and initial text '   '; returns 'x'.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-26 validation loop (S2)")
     void promptForQuery_blankThenValid_reAsksWithError() {
-        fail("TODO: Member D - D-26");
+        // Arrange
+        dialogs.answerSearchQuery(Optional.of("   ")).answerSearchQuery(Optional.of("x"));
+
+        // Act
+        Optional<SearchQuery> query = workflow.promptForQuery();
+
+        // Assert
+        List<Question> asked = dialogs.questionsOf("askSearchQuery");
+        assertEquals(List.of("", ""), asked.get(0).arguments());
+        assertEquals("   ", asked.get(1).arguments().get(0));
+        assertFalse(asked.get(1).arguments().get(1).isEmpty());
+        assertEquals("x", query.orElseThrow().text());
     }
 
     /**
@@ -64,9 +86,12 @@ class SearchQueryWorkflowTest {
      * <p>Assert: Optional.empty().</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-27 cancel")
     void promptForQuery_cancelled_returnsEmpty() {
-        fail("TODO: Member D - D-27");
+        // Arrange
+        dialogs.answerSearchQuery(Optional.empty());
+
+        // Act + Assert
+        assertEquals(Optional.empty(), workflow.promptForQuery());
     }
 }

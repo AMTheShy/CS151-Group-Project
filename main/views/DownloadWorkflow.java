@@ -1,8 +1,12 @@
 package views;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Objects;
+import java.util.Optional;
 
 import controllers.DocumentLibraryController;
+import models.AppConstants;
 import models.Document;
 
 /**
@@ -54,6 +58,16 @@ public final class DownloadWorkflow {
      * @throws NullPointerException if {@code document} is {@code null}
      */
     public boolean run(Document document) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(document, "document");
+        Optional<Path> target = dialogs.chooseDownloadTarget(
+                document.title() + AppConstants.EXPORT_FILE_EXTENSION);
+        if (target.isEmpty()) {
+            return false;
+        }
+        if (Files.exists(target.get()) && !dialogs.confirmOverwriteFile(target.get())) {
+            return false;
+        }
+        libraryController.exportDocument(document, target.get());
+        return true;
     }
 }

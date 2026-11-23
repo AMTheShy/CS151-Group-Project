@@ -40,6 +40,18 @@ public final class SearchQueryWorkflow {
      * @return the valid query, or empty if the user cancelled
      */
     public Optional<SearchQuery> promptForQuery() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        String input = "";
+        Optional<String> error = Optional.empty();
+        while (true) {
+            Optional<String> raw = dialogs.askSearchQuery(input, error);
+            if (raw.isEmpty()) {
+                return Optional.empty();
+            }
+            error = SearchQuery.validate(raw.get());
+            if (error.isEmpty()) {
+                return Optional.of(SearchQuery.of(raw.get()));
+            }
+            input = raw.get();
+        }
     }
 }

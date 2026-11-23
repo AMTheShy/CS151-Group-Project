@@ -1,8 +1,11 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static views.SwingTestSupport.onEdt;
+import static views.SwingTestSupport.onEdtGet;
 
-import org.junit.jupiter.api.Disabled;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,9 +27,19 @@ class ClosableTabHeaderTest {
      * <p>Assert: counter 1; label text 'title'; tooltip 'full'.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-34 closable tab (U3)")
     void closeButton_click_runsCallbackOnce() {
-        fail("TODO: Member D - D-34");
+        // Arrange
+        AtomicInteger counter = new AtomicInteger();
+        ClosableTabHeader header = onEdtGet(() -> new ClosableTabHeader("title", "full", counter::incrementAndGet));
+
+        // Act
+        onEdt(() -> header.closeButton().doClick());
+
+        // Assert
+        assertEquals(1, counter.get());
+        assertEquals("title", onEdtGet(() -> header.titleLabel().getText()));
+        assertEquals("full", onEdtGet(() -> header.titleLabel().getToolTipText()));
+        assertEquals("full", onEdtGet(header::getToolTipText));
     }
 }
