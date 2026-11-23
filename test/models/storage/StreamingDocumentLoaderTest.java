@@ -159,6 +159,7 @@ class StreamingDocumentLoaderTest {
 
         // Assert
         assertEquals(InvalidDocumentException.Reason.FILE_TOO_LARGE, thrown.reason());
+        // no progress calls means the loader never started reading the file
         assertTrue(progressCalls.isEmpty(), "the content must not be read before the size check");
     }
 
@@ -293,6 +294,7 @@ class StreamingDocumentLoaderTest {
         }
 
         // Assert
+        // use the median so one slow run does not fail the test
         Arrays.sort(durationsNanos);
         long medianMillis = durationsNanos[MEASURED_RUNS / 2] / 1_000_000;
         assertTrue(medianMillis <= LOAD_BUDGET_MILLIS,

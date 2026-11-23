@@ -466,6 +466,7 @@ class DefaultDocumentRepositoryTest {
         try {
             for (int round = 0; round < RACE_ROUNDS; round++) {
                 // Arrange
+                // new repository every round so the rounds do not affect each other
                 FakeDocumentStore roundStore = new FakeDocumentStore();
                 DefaultDocumentRepository roundRepository = new DefaultDocumentRepository(roundStore);
                 CountDownLatch start = new CountDownLatch(1);
@@ -473,6 +474,7 @@ class DefaultDocumentRepositoryTest {
                 for (int thread = 0; thread < 2; thread++) {
                     Document document = TestDocuments.document("Same", "from thread " + thread);
                     attempts.add(executor.submit(() -> {
+                        // both threads wait here, then hit add() at the same moment
                         assertTrue(start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
                         try {
                             roundRepository.add(document, false);
@@ -484,6 +486,7 @@ class DefaultDocumentRepositoryTest {
                 }
 
                 // Act
+                // release both threads at once
                 start.countDown();
                 int successes = 0;
                 for (Future<Boolean> attempt : attempts) {
@@ -494,6 +497,7 @@ class DefaultDocumentRepositoryTest {
 
                 // Assert
                 assertEquals(1, successes, "round " + round + ": exactly one add must succeed");
+                // the loser must not have written anything to the store either
                 assertEquals(List.of("save:Same"), roundStore.operations(), "round " + round);
             }
         } finally {
@@ -565,6 +569,7 @@ class DefaultDocumentRepositoryTest {
                 readers.add(executor.submit(() -> {
                     assertTrue(start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
                     int snapshotsChecked = 0;
+                    // do-while so every reader checks at least one snapshot
                     do {
                         assertSorted(repository.listAllSortedByTitle());
                         snapshotsChecked++;
@@ -584,6 +589,7 @@ class DefaultDocumentRepositoryTest {
                         }
                     }
                     return null;
+                // in finally so the readers stop even if the writer crashes
                 } finally {
                     writerDone.set(true);
                 }
@@ -642,6 +648,7 @@ class DefaultDocumentRepositoryTest {
             for (int size = 1; size <= expectedCount; size++) {
                 expectedSizes.add(size);
             }
+            // if notifications were sent after unlocking, the sizes could arrive out of order
             assertEquals(expectedSizes, sizes);
             assertEquals(expectedCount, repository.listAllSortedByTitle().size());
         } finally {
@@ -728,6 +735,7 @@ class DefaultDocumentRepositoryTest {
      * @throws InterruptedException if interrupted while waiting
      */
     private static void shutDown(ExecutorService executor) throws InterruptedException {
+        // always stop the threads, even when a test fails
         executor.shutdownNow();
         assertTrue(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS), "worker threads did not stop");
     }

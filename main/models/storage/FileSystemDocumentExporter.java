@@ -93,14 +93,18 @@ public final class FileSystemDocumentExporter implements DocumentExporter {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(token, "token");
 
+        // the folder has to exist already, we never create it (A-42)
         Path absoluteTarget = target.toAbsolutePath();
         Path parent = absoluteTarget.getParent();
         if (parent == null || !Files.isDirectory(parent)) {
             throw new DocumentStorageException("The folder \"" + parent + "\" does not exist.");
         }
+        // a move with REPLACE_EXISTING would delete an empty folder, so refuse it
         if (Files.isDirectory(absoluteTarget)) {
             throw new DocumentStorageException("Could not write \"" + target + "\": it is a folder.");
         }
+        // Windows refuses to replace a read-only file but Mac/Linux just do it,
+        // so check it ourselves to make both behave the same (A-43)
         if (Files.exists(absoluteTarget) && !Files.isWritable(absoluteTarget)) {
             throw new DocumentStorageException("Could not write \"" + target + "\": " + ACCESS_DENIED + ".");
         }
@@ -108,17 +112,21 @@ public final class FileSystemDocumentExporter implements DocumentExporter {
         Path temporary = null;
         boolean moved = false;
         try {
+            // write everything to a temp file in the same folder first
             temporary = Files.createTempFile(parent, TEMP_PREFIX, TEMP_SUFFIX);
+            // temp files are owner-only by default, give the download normal permissions
             if (Files.getFileStore(temporary).supportsFileAttributeView(POSIX_VIEW)) {
                 Files.setPosixFilePermissions(temporary, DOWNLOAD_PERMISSIONS);
             }
             writeChunks(document.content().getBytes(StandardCharsets.US_ASCII), temporary, token);
+            // swap it in at the very end, so the target is never half written
             moveOnto(temporary, absoluteTarget);
             moved = true;
         } catch (IOException ioException) {
             throw new DocumentStorageException("Could not write \"" + target + "\": "
                     + describe(ioException) + ".", ioException);
         } finally {
+            // runs on errors AND on cancel: if we never got to the move, delete the temp file
             if (!moved && temporary != null) {
                 deleteTemporary(temporary);
             }
@@ -135,6 +143,7 @@ public final class FileSystemDocumentExporter implements DocumentExporter {
      * @throws IOException if writing fails
      */
     private static void writeChunks(byte[] bytes, Path temporary, CancellationToken token) throws IOException {
+        // check cancel once before starting and after every chunk
         token.throwIfCancelled();
         try (OutputStream output = Files.newOutputStream(temporary)) {
             for (int offset = 0; offset < bytes.length; offset += AppConstants.IO_BUFFER_SIZE_BYTES) {
@@ -156,6 +165,7 @@ public final class FileSystemDocumentExporter implements DocumentExporter {
         try {
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException notSupported) {
+            // some drives (network drives etc.) cannot do atomic moves, use a normal replace
             LOGGER.log(Level.FINE, "Atomic move not supported, falling back to a plain replace", notSupported);
             Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
         }

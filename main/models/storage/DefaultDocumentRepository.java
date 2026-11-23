@@ -107,12 +107,16 @@ public final class DefaultDocumentRepository implements DocumentRepository {
         String title = document.title();
         mutationLock.lock();
         try {
+            // everything here runs under the lock, so no other thread can add the same title
+            // between our check and our save (D2)
             Document previous = documents.get(title);
             if (previous != null && !replaceExisting) {
                 throw new DuplicateTitleException(title);
             }
+            // disk first, memory second: if save throws, the map is never touched (A-06)
             store.save(document);
             documents.put(title, document);
+            // still holding the lock, so listeners get the updates in the right order (R9)
             notifyListeners();
             return Optional.ofNullable(previous);
         } finally {
@@ -149,6 +153,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
      */
     @Override
     public List<Document> listAllSortedByTitle() {
+        // the map is already sorted, just copy it so nobody can change our snapshot
         return List.copyOf(documents.values());
     }
 
@@ -175,6 +180,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
     @Override
     public List<String> removeAll(Collection<String> titles) throws DocumentStorageException {
         Objects.requireNonNull(titles, "titles");
+        // copy the input so it cannot change while we loop
         List<String> requested = List.copyOf(titles); // throws NullPointerException for null elements
         List<String> removed = new ArrayList<>();
         List<String> failed = new ArrayList<>();
@@ -182,6 +188,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
         mutationLock.lock();
         try {
             for (String title : requested) {
+                // already gone (maybe deleted by someone else), skip it
                 if (!documents.containsKey(title)) {
                     continue;
                 }
@@ -191,18 +198,21 @@ public final class DefaultDocumentRepository implements DocumentRepository {
                     removed.add(title);
                 } catch (DocumentStorageException failure) {
                     LOGGER.log(Level.WARNING, "Could not delete \"" + title + "\"", failure);
+                    // remember the failure but keep deleting the rest (A-08)
                     failed.add(title);
                     if (firstFailure == null) {
                         firstFailure = failure;
                     }
                 }
             }
+            // one notification for the whole batch
             if (!removed.isEmpty()) {
                 notifyListeners();
             }
         } finally {
             mutationLock.unlock();
         }
+        // throw only after unlocking
         if (firstFailure != null) {
             throw new DocumentStorageException("Could not delete " + quoteAll(failed) + ": "
                     + withoutFinalPeriod(firstFailure.getMessage()) + ".", firstFailure);
@@ -234,6 +244,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
         for (int index = 0; index < total; index++) {
             token.throwIfCancelled();
             String title = titles.get(index);
+            // the user already imported this title while we were loading, theirs is newer (R6)
             if (documents.containsKey(title)) {
                 skippedCount++;
             } else {
@@ -246,6 +257,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
                     }
                 } catch (DocumentNotFoundException | DocumentStorageException failure) {
                     LOGGER.log(Level.WARNING, "Skipping persisted document \"" + title + "\"", failure);
+                    // one broken file should not stop the whole startup
                     problems.add(title + ": " + failure.getMessage());
                 }
             }
@@ -287,6 +299,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
             try {
                 listener.onDocumentsChanged(snapshot);
             } catch (RuntimeException failure) {
+                // a broken listener should not break the save, just log it
                 LOGGER.log(Level.WARNING, "A repository listener failed; continuing with the others", failure);
             }
         }
@@ -302,6 +315,7 @@ public final class DefaultDocumentRepository implements DocumentRepository {
     private boolean insertIfAbsent(Document persisted) {
         mutationLock.lock();
         try {
+            // only add it if the user did not import the same title in the meantime
             if (documents.putIfAbsent(persisted.title(), persisted) != null) {
                 return false;
             }

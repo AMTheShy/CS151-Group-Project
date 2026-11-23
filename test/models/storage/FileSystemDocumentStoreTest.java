@@ -241,6 +241,7 @@ class FileSystemDocumentStoreTest {
         // Arrange
         store.save(TestDocuments.document("A", "the full original content"));
         Path contentFile = contentFile("A");
+        // the copy is read-only, so unlock it before damaging it on purpose
         assertTrue(contentFile.toFile().setWritable(true), "could not clear the read-only flag");
         Files.write(contentFile, "trunc".getBytes(StandardCharsets.US_ASCII));
 

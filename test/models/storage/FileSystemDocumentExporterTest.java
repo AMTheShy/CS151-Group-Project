@@ -133,6 +133,7 @@ class FileSystemDocumentExporterTest {
         Path target = TestDocuments.writeAsciiFile(tempDir, "locked.txt", "original");
         assertTrue(target.toFile().setWritable(false), "could not mark the target read-only");
         try {
+            // admin/root ignores read-only flags, skip the test in that case
             Assumptions.assumeFalse(Files.isWritable(target), "running with privileges that ignore read-only flags");
             Document document = TestDocuments.document("Notes", "replacement");
 
@@ -147,6 +148,7 @@ class FileSystemDocumentExporterTest {
                     "message must state the cause: " + thrown.getMessage());
             assertEquals("original", Files.readString(target, StandardCharsets.US_ASCII));
             assertEquals(List.of(), temporaryFiles());
+        // make it writable again so @TempDir can delete it afterwards
         } finally {
             target.toFile().setWritable(true);
         }

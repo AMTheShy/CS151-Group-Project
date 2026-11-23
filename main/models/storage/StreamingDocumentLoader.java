@@ -97,11 +97,13 @@ public final class StreamingDocumentLoader implements DocumentLoader {
         Objects.requireNonNull(progress, "progress");
         Objects.requireNonNull(token, "token");
 
+        // make sure the path is an actual file we can read (not a folder, not missing)
         if (!Files.isRegularFile(source) || !Files.isReadable(source)) {
             throw new InvalidDocumentException(InvalidDocumentException.Reason.NOT_A_REGULAR_FILE,
                     "\"" + source + "\" is not a readable file.");
         }
         try {
+            // check the size first so we never waste time reading a file that is too big (A-34)
             long total = Files.size(source);
             if (total > maxFileSizeBytes) {
                 throw fileTooLarge(total);
@@ -126,6 +128,7 @@ public final class StreamingDocumentLoader implements DocumentLoader {
      */
     private String readValidated(Path source, long total, ProgressListener progress, CancellationToken token)
             throws InvalidDocumentException, IOException {
+        // one array for the whole file, filled 64 KB at a time
         byte[] content = new byte[Math.toIntExact(total)];
         int bytesRead = 0;
         long lastReportedCompleted = -1;
@@ -144,15 +147,18 @@ public final class StreamingDocumentLoader implements DocumentLoader {
                     checkAscii(content, bytesRead, bytesRead + 1);
                     bytesRead++;
                 } else {
+                    // normal case: read the next chunk straight into the array
                     int requested = Math.min(AppConstants.IO_BUFFER_SIZE_BYTES, content.length - bytesRead);
                     int chunkLength = input.read(content, bytesRead, requested);
                     if (chunkLength < 0) {
                         break;
                     }
+                    // stop if the user hit cancel, then only check the bytes we just read
                     token.throwIfCancelled();
                     checkAscii(content, bytesRead, bytesRead + chunkLength);
                     bytesRead += chunkLength;
                 }
+                // move the progress bar (total can never be less than what we already read)
                 lastReportedCompleted = bytesRead;
                 lastReportedTotal = Math.max(total, bytesRead);
                 progress.onProgress(lastReportedCompleted, lastReportedTotal);
@@ -162,6 +168,7 @@ public final class StreamingDocumentLoader implements DocumentLoader {
         if (lastReportedCompleted != bytesRead || lastReportedTotal != bytesRead) {
             progress.onProgress(bytesRead, bytesRead);
         }
+        // decode byte by byte, so CRLF, LF and CR line breaks stay exactly the same
         return new String(content, 0, bytesRead, StandardCharsets.US_ASCII);
     }
 
@@ -176,10 +183,12 @@ public final class StreamingDocumentLoader implements DocumentLoader {
      * @throws IOException              if the current size cannot be determined
      */
     private byte[] grow(byte[] content, int bytesRead, Path source) throws InvalidDocumentException, IOException {
+        // the file got bigger while we were reading it, so check the limit again
         long neededSize = (long) bytesRead + 1;
         if (neededSize > maxFileSizeBytes) {
             throw fileTooLarge(Math.max(neededSize, Files.size(source)));
         }
+        // double the array (but never past the limit) so we do not copy it every byte
         long doubledSize = Math.max((long) content.length * 2, (long) AppConstants.IO_BUFFER_SIZE_BYTES);
         int newCapacity = Math.toIntExact(Math.min(maxFileSizeBytes, Math.max(neededSize, doubledSize)));
         return Arrays.copyOf(content, newCapacity);
@@ -196,6 +205,7 @@ public final class StreamingDocumentLoader implements DocumentLoader {
     private static void checkAscii(byte[] content, int from, int to) throws InvalidDocumentException {
         for (int i = from; i < to; i++) {
             if (!AsciiText.isAsciiByte(content[i])) {
+                // i is also the offset in the file, which is what the message shows
                 String byteText = String.format(Locale.ROOT, "0x%02X", content[i] & UNSIGNED_BYTE_MASK);
                 throw new InvalidDocumentException(InvalidDocumentException.Reason.NON_ASCII_CONTENT,
                         "The file contains a non-ASCII byte (" + byteText + ") at position " + i
@@ -214,6 +224,7 @@ public final class StreamingDocumentLoader implements DocumentLoader {
     private InvalidDocumentException fileTooLarge(long size) {
         String sizeText = formatMegabytes(size);
         String limitText = formatMegabytes(maxFileSizeBytes);
+        // e.g. 20.01 MB and 20 MB both print as "20 MB", so show exact bytes instead
         if (sizeText.equals(limitText)) {
             sizeText = size + " bytes";
             limitText = maxFileSizeBytes + " bytes";
@@ -241,6 +252,7 @@ public final class StreamingDocumentLoader implements DocumentLoader {
      */
     private static String formatMegabytes(long bytes) {
         String number = String.format(Locale.ROOT, "%.1f", bytes / BYTES_PER_MEGABYTE);
+        // show 20 MB instead of 20.0 MB
         if (number.endsWith(ZERO_DECIMAL_SUFFIX)) {
             number = number.substring(0, number.length() - ZERO_DECIMAL_SUFFIX.length());
         }

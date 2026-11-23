@@ -155,14 +155,19 @@ public final class FileSystemDocumentStore implements DocumentStore {
         byte[] contentBytes = document.content().getBytes(StandardCharsets.US_ASCII);
         boolean contentMoved = false;
         try {
+            // steps 1-2: write both temp files, nothing visible changes yet
             Files.write(contentTemp, contentBytes);
             Files.write(metadataTemp, metadataBytes(document, contentBytes.length));
+            // step 3: Windows cannot replace a read-only file, so unlock the old copy first
             makeWritable(contentPath);
             moveIntoPlace(contentTemp, contentPath);
             contentMoved = true;
+            // step 5: lock the new copy again (D4)
             makeReadOnly(contentPath);
+            // step 6: metadata goes last, it is what makes the entry count as saved
             moveIntoPlace(metadataTemp, metadataPath);
         } catch (IOException ioException) {
+            // clean up, and if the old copy is still there make it read-only again
             deleteTemporary(contentTemp);
             deleteTemporary(metadataTemp);
             if (!contentMoved && Files.exists(contentPath)) {
@@ -185,6 +190,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
         String id = entryId(title);
         Path contentPath = contentPath(id);
         try {
+            // remove the metadata first so the entry stops counting right away
             Files.deleteIfExists(metadataPath(id));
             makeWritable(contentPath);
             Files.deleteIfExists(contentPath);
@@ -205,6 +211,8 @@ public final class FileSystemDocumentStore implements DocumentStore {
     public List<String> listStoredTitles() throws DocumentStorageException {
         ensureDirectory();
         List<String> titles = new ArrayList<>();
+        // only look at metadata files; tmp files and orphan .txt files are just ignored, never deleted
+        // (a save could be running at the same time and still need its tmp file)
         try (DirectoryStream<Path> metadataFiles = Files.newDirectoryStream(directory, "*" + METADATA_SUFFIX)) {
             for (Path metadataFile : metadataFiles) {
                 completeEntryTitle(metadataFile).ifPresent(titles::add);
@@ -231,6 +239,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
         Objects.requireNonNull(title, "title");
         String id = entryId(title);
         Path metadataPath = metadataPath(id);
+        // no metadata = never saved (or already deleted)
         if (!Files.isRegularFile(metadataPath)) {
             throw new DocumentNotFoundException(title);
         }
@@ -242,6 +251,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
             }
             long expectedLength = Long.parseLong(metadata.getProperty(KEY_LENGTH));
             Instant importedAt = Instant.parse(metadata.getProperty(KEY_IMPORTED_AT));
+            // make sure the content still matches what the metadata says
             byte[] contentBytes = Files.readAllBytes(contentPath(id));
             if (contentBytes.length != expectedLength) {
                 throw corrupt(title, "expected " + expectedLength + " bytes but found " + contentBytes.length);
@@ -277,6 +287,8 @@ public final class FileSystemDocumentStore implements DocumentStore {
     static String entryId(String title) {
         Objects.requireNonNull(title, "title");
         try {
+            // SHA-256 of the title -> 64 hex chars. "Foo" and "foo" get different names,
+            // and characters like / or : never end up in a file name
             MessageDigest digest = MessageDigest.getInstance(DIGEST_ALGORITHM);
             return HexFormat.of().formatHex(digest.digest(title.getBytes(StandardCharsets.US_ASCII)));
         } catch (NoSuchAlgorithmException missingAlgorithm) {
@@ -323,6 +335,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
         if (Files.isDirectory(directory)) {
             return;
         }
+        // something else (a regular file) is already using this name
         if (Files.exists(directory)) {
             throw new DocumentStorageException("The document folder \"" + directory
                     + "\" cannot be used because a file with that name exists.");
@@ -428,6 +441,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
         try {
             Properties metadata = readMetadata(metadataFile);
             String title = metadata.getProperty(KEY_TITLE);
+            // the file name should be the hash of the title inside, otherwise something is wrong
             if (title == null || !entryId(title).equals(id)) {
                 LOGGER.warning("Skipping " + fileName + ": its title does not match the file name.");
                 return Optional.empty();
@@ -439,6 +453,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
             }
             Path contentPath = contentPath(id);
             long expectedLength = Long.parseLong(metadata.getProperty(KEY_LENGTH));
+            // the content file has to exist and be exactly the size we saved
             if (!Files.isRegularFile(contentPath) || Files.size(contentPath) != expectedLength) {
                 LOGGER.warning("Skipping incomplete entry " + fileName + " (content missing or wrong size).");
                 return Optional.empty();
@@ -483,6 +498,7 @@ public final class FileSystemDocumentStore implements DocumentStore {
      * @param file the file
      */
     private static void makeReadOnly(Path file) {
+        // false, false = take away write permission for everyone, not just the owner
         if (!file.toFile().setWritable(false, false)) {
             LOGGER.warning("Could not mark " + file + " read-only.");
         }
