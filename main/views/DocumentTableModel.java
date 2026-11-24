@@ -1,6 +1,8 @@
 package views;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import javax.swing.table.AbstractTableModel;
 
@@ -43,6 +45,9 @@ public final class DocumentTableModel extends AbstractTableModel {
 
     private static final long serialVersionUID = 1L;
 
+    /** Column headers, indexed by column. */
+    private static final List<String> COLUMN_NAMES = List.of("Title", "Preview", "Delete");
+
     /** Current rows, immutable, in display order. */
     private transient List<DocumentSummary> rows = List.of();
 
@@ -60,7 +65,10 @@ public final class DocumentTableModel extends AbstractTableModel {
      * @param sortedDocuments the new rows, already sorted, not {@code null}
      */
     public void setDocuments(List<DocumentSummary> sortedDocuments) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(sortedDocuments, "sortedDocuments");
+        rows = List.copyOf(sortedDocuments);
+        selection.retainOnly(rows.stream().map(DocumentSummary::title).collect(Collectors.toSet()));
+        fireTableDataChanged();
     }
 
     /**
@@ -71,7 +79,7 @@ public final class DocumentTableModel extends AbstractTableModel {
      * @throws IndexOutOfBoundsException if the row does not exist
      */
     public DocumentSummary summaryAt(int row) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return rows.get(row);
     }
 
     /**
@@ -80,7 +88,10 @@ public final class DocumentTableModel extends AbstractTableModel {
      * @return immutable list
      */
     public List<String> selectedTitles() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return rows.stream()
+                .map(DocumentSummary::title)
+                .filter(selection::isSelected)
+                .toList();
     }
 
     /**
@@ -89,46 +100,69 @@ public final class DocumentTableModel extends AbstractTableModel {
      * @return {@code true} if any is ticked
      */
     public boolean hasSelection() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return !selection.isEmpty();
     }
 
     /** Unticks all rows and fires an update. */
     public void clearSelection() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        if (selection.isEmpty()) {
+            return;
+        }
+        selection.clear();
+        if (!rows.isEmpty()) {
+            fireTableRowsUpdated(0, rows.size() - 1);
+        }
     }
 
     @Override
     public int getRowCount() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return rows.size();
     }
 
     @Override
     public int getColumnCount() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return COLUMN_NAMES.size();
     }
 
     @Override
     public String getColumnName(int column) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return COLUMN_NAMES.get(column);
     }
 
     @Override
     public Class<?> getColumnClass(int column) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return column == DELETE_COLUMN ? Boolean.class : String.class;
     }
 
     @Override
     public boolean isCellEditable(int row, int column) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return column == DELETE_COLUMN;
     }
 
     @Override
     public Object getValueAt(int row, int column) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        DocumentSummary summary = rows.get(row);
+        switch (column) {
+            case TITLE_COLUMN:
+                return summary.title();
+            case PREVIEW_COLUMN:
+                return summary.preview();
+            case DELETE_COLUMN:
+                return selection.isSelected(summary.title());
+            default:
+                throw new IndexOutOfBoundsException("column " + column);
+        }
     }
 
     @Override
     public void setValueAt(Object value, int row, int column) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        if (column != DELETE_COLUMN) {
+            return;
+        }
+        if (!(value instanceof Boolean)) {
+            throw new IllegalArgumentException("value must be a Boolean: " + value);
+        }
+        selection.setSelected(rows.get(row).title(), (Boolean) value);
+        fireTableCellUpdated(row, column);
     }
 }

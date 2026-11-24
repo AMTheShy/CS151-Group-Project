@@ -1,8 +1,11 @@
 package views;
 
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.util.List;
 import java.util.Objects;
 
+import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -46,6 +49,12 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
 
     private static final long serialVersionUID = 1L;
 
+    /** Rows shown by the open drop-down before it scrolls. */
+    private static final int COMBO_VISIBLE_ROWS = 12;
+
+    /** Gap around and between the parts of the top area in pixels. */
+    private static final int GAP = 6;
+
     /** The query of this tab. */
     private final transient SearchQuery query;
 
@@ -64,8 +73,11 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
     /** Renders the selected document. */
     private final DocumentReaderPanel readerPanel;
 
-    /** Handle of the running search; set right after the search starts. */
+    /** Handle of the running search; {@code null} until {@link #attachHandle} (private state only). */
     private transient SearchHandle handle;
+
+    /** The result currently given to the reader, or {@code null} (private state only). */
+    private transient DocumentSearchResult shownResult;
 
     /**
      * Creates a tab in the "Searching..." state.
@@ -77,7 +89,24 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
     public SearchTabPanel(SearchQuery query, DocumentReaderPanel readerPanel) {
         this.query = Objects.requireNonNull(query, "query");
         this.readerPanel = Objects.requireNonNull(readerPanel, "readerPanel");
-        // TODO: Member D - layout, renderer, selection listener, initial searching state (see class Javadoc)
+        resultComboBox.setRenderer(new SearchResultCellRenderer());
+        resultComboBox.setMaximumRowCount(COMBO_VISIBLE_ROWS);
+        resultComboBox.setEnabled(false);
+        resultComboBox.addActionListener(event -> onSelectionChanged());
+        progressBar.setIndeterminate(true);
+        progressBar.setVisible(true);
+
+        JPanel statusPanel = new JPanel(new BorderLayout(GAP, 0));
+        statusPanel.add(statusLabel, BorderLayout.WEST);
+        statusPanel.add(progressBar, BorderLayout.CENTER);
+        JPanel northPanel = new JPanel(new BorderLayout(0, GAP));
+        northPanel.setBorder(BorderFactory.createEmptyBorder(GAP, GAP, GAP, GAP));
+        northPanel.add(resultComboBox, BorderLayout.NORTH);
+        northPanel.add(statusPanel, BorderLayout.SOUTH);
+
+        setLayout(new BorderLayout());
+        add(northPanel, BorderLayout.NORTH);
+        add(readerPanel, BorderLayout.CENTER);
     }
 
     /**
@@ -86,12 +115,14 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
      * @param searchHandle the handle, not {@code null}
      */
     public void attachHandle(SearchHandle searchHandle) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        this.handle = Objects.requireNonNull(searchHandle, "searchHandle");
     }
 
     /** Cancels the search of this tab (idempotent); called when the tab closes (D-41). */
     public void cancelSearch() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        if (handle != null) {
+            handle.cancel();
+        }
     }
 
     /**
@@ -106,13 +137,46 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
     /** {@inheritDoc} Tests: D-36, D-37. */
     @Override
     public void onSearchCompleted(List<DocumentSearchResult> sortedResults) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(sortedResults, "sortedResults");
+        progressBar.setIndeterminate(false);
+        progressBar.setVisible(false);
+        comboModel.setResults(sortedResults);
+        int count = sortedResults.size();
+        if (count == 0) {
+            statusLabel.setText("No matches");
+            resultComboBox.setEnabled(false);
+        } else {
+            statusLabel.setText(count == 1 ? "1 matching document" : count + " matching documents");
+            resultComboBox.setEnabled(true);
+        }
+        shownResult = null;
+        readerPanel.clear();
     }
 
     /** {@inheritDoc} Test: D-38. */
     @Override
     public void onSearchFailed(String message) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(message, "message");
+        progressBar.setIndeterminate(false);
+        progressBar.setVisible(false);
+        resultComboBox.setEnabled(false);
+        statusLabel.setForeground(Color.RED);
+        statusLabel.setText("Search failed: " + message);
+    }
+
+    /** Shows the selected result in the reader, or clears the reader when nothing is selected. */
+    private void onSelectionChanged() {
+        Object selected = comboModel.getSelectedItem();
+        if (selected == shownResult) {
+            return;
+        }
+        if (selected instanceof DocumentSearchResult) {
+            shownResult = (DocumentSearchResult) selected;
+            readerPanel.showResult(shownResult, query);
+        } else {
+            shownResult = null;
+            readerPanel.clear();
+        }
     }
 
     /**

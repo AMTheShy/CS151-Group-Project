@@ -1,9 +1,13 @@
 package views.support;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -33,10 +37,18 @@ class DeletionSelectionTest {
      * <p>Assert: A false after two toggles; B true.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-10 ticking")
     void toggle_title_flipsState() {
-        fail("TODO: Member D - D-10");
+        // Act
+        boolean afterFirstToggle = selection.toggle("A");
+        boolean afterSecondToggle = selection.toggle("A");
+        selection.setSelected("B", true);
+
+        // Assert
+        assertTrue(afterFirstToggle);
+        assertFalse(afterSecondToggle);
+        assertFalse(selection.isSelected("A"));
+        assertTrue(selection.isSelected("B"));
     }
 
     /**
@@ -47,10 +59,18 @@ class DeletionSelectionTest {
      * <p>Assert: selected [A, C].</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-11 refresh after deletion")
     void retainOnly_existingTitles_dropsOthers() {
-        fail("TODO: Member D - D-11");
+        // Arrange
+        selection.setSelected("A", true);
+        selection.setSelected("B", true);
+        selection.setSelected("C", true);
+
+        // Act
+        selection.retainOnly(List.of("A", "C", "D"));
+
+        // Assert
+        assertEquals(List.of("A", "C"), selection.selectedTitles());
     }
 
     /**
@@ -61,10 +81,19 @@ class DeletionSelectionTest {
      * <p>Assert: [A, a, b]; add() throws UnsupportedOperationException.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-12 stable order (D6)")
     void selectedTitles_mixedCase_sortedAndImmutable() {
-        fail("TODO: Member D - D-12");
+        // Arrange
+        selection.setSelected("b", true);
+        selection.setSelected("A", true);
+        selection.setSelected("a", true);
+
+        // Act
+        List<String> titles = selection.selectedTitles();
+
+        // Assert
+        assertEquals(List.of("A", "a", "b"), titles);
+        assertThrows(UnsupportedOperationException.class, () -> titles.add("c"));
     }
 
     /**
@@ -75,9 +104,15 @@ class DeletionSelectionTest {
      * <p>Assert: isEmpty true.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-13 Delete button disabled when empty (D7)")
     void clear_afterSelections_isEmpty() {
-        fail("TODO: Member D - D-13");
+        // Arrange
+        selection.setSelected("A", true);
+
+        // Act
+        selection.clear();
+
+        // Assert
+        assertTrue(selection.isEmpty());
     }
 }

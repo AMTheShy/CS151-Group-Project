@@ -1,16 +1,23 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import models.Document;
+import testsupport.FakeDocumentLibraryController.ExportRequest;
 import testsupport.FakeDocumentLibraryController;
+import testsupport.TestDocuments;
 
 /**
  * Tests for {@code DownloadWorkflow}. Owner: Member D.
@@ -47,10 +54,17 @@ class DownloadWorkflowTest {
      * <p>Assert: returns false; no export request.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-21 cancel at save dialog")
     void run_chooserCancelled_exportsNothing() {
-        fail("TODO: Member D - D-21");
+        // Arrange
+        dialogs.answerDownloadTarget(Optional.empty());
+
+        // Act
+        boolean started = workflow.run(TestDocuments.document("Notes"));
+
+        // Assert
+        assertFalse(started);
+        assertEquals(List.of(), controller.exportRequests());
     }
 
     /**
@@ -61,10 +75,21 @@ class DownloadWorkflowTest {
      * <p>Assert: chooser suggested 'Notes.txt'; export request (document, target).</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-22 download (UC5, D8)")
     void run_newTarget_exportsSnapshotWithDefaultName() {
-        fail("TODO: Member D - D-22");
+        // Arrange
+        Document document = TestDocuments.document("Notes", "line 1\r\nline 2");
+        Path target = tempDir.resolve("Notes.txt");
+        dialogs.answerDownloadTarget(Optional.of(target));
+
+        // Act
+        boolean started = workflow.run(document);
+
+        // Assert
+        assertTrue(started);
+        assertEquals(List.of("Notes.txt"), dialogs.questionsOf("chooseDownloadTarget").get(0).arguments());
+        assertEquals(List.of(), dialogs.questionsOf("confirmOverwriteFile"));
+        assertEquals(List.of(new ExportRequest(document, target)), controller.exportRequests());
     }
 
     /**
@@ -75,10 +100,19 @@ class DownloadWorkflowTest {
      * <p>Assert: returns false; no export request.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-23 overwrite declined (D8)")
-    void run_existingTargetDeclined_exportsNothing() {
-        fail("TODO: Member D - D-23");
+    void run_existingTargetDeclined_exportsNothing() throws IOException {
+        // Arrange
+        Path target = TestDocuments.writeAsciiFile(tempDir, "Notes.txt", "old");
+        dialogs.answerDownloadTarget(Optional.of(target)).answerConfirmOverwriteFile(false);
+
+        // Act
+        boolean started = workflow.run(TestDocuments.document("Notes"));
+
+        // Assert
+        assertFalse(started);
+        assertEquals(1, dialogs.questionsOf("confirmOverwriteFile").size());
+        assertEquals(List.of(), controller.exportRequests());
     }
 
     /**
@@ -89,9 +123,18 @@ class DownloadWorkflowTest {
      * <p>Assert: export request present.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-24 overwrite confirmed (D8)")
-    void run_existingTargetConfirmed_exports() {
-        fail("TODO: Member D - D-24");
+    void run_existingTargetConfirmed_exports() throws IOException {
+        // Arrange
+        Document document = TestDocuments.document("Notes");
+        Path target = TestDocuments.writeAsciiFile(tempDir, "Notes.txt", "old");
+        dialogs.answerDownloadTarget(Optional.of(target)).answerConfirmOverwriteFile(true);
+
+        // Act
+        boolean started = workflow.run(document);
+
+        // Assert
+        assertTrue(started);
+        assertEquals(List.of(new ExportRequest(document, target)), controller.exportRequests());
     }
 }

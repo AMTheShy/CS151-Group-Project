@@ -1,7 +1,9 @@
 package views;
 
+import java.awt.FlowLayout;
 import java.util.Objects;
 
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -25,6 +27,12 @@ public final class ClosableTabHeader extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
+    /** Horizontal gap between label and button in pixels. */
+    private static final int HEADER_GAP = 4;
+
+    /** Horizontal padding of the close button in pixels. */
+    private static final int BUTTON_PADDING = 2;
+
     /** Shows the tab title. */
     private final JLabel titleLabel;
 
@@ -47,7 +55,18 @@ public final class ClosableTabHeader extends JPanel {
         this.closeButton = new JButton("x");
         this.onClose = Objects.requireNonNull(onClose, "onClose");
         Objects.requireNonNull(tooltip, "tooltip");
-        // TODO: Member D - layout, tooltips, button styling and action listener (see class Javadoc)
+        setOpaque(false);
+        setLayout(new FlowLayout(FlowLayout.LEFT, HEADER_GAP, 0));
+        setToolTipText(tooltip);
+        titleLabel.setToolTipText(tooltip);
+        closeButton.setToolTipText("Close tab");
+        closeButton.setFocusable(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setContentAreaFilled(false);
+        closeButton.setBorder(BorderFactory.createEmptyBorder(0, BUTTON_PADDING, 0, BUTTON_PADDING));
+        closeButton.addActionListener(event -> this.onClose.run());
+        add(titleLabel);
+        add(closeButton);
     }
 
     /**

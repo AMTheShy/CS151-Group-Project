@@ -1,11 +1,20 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static views.SwingTestSupport.onEdtGet;
+
+import java.util.List;
+
+import javax.swing.JList;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import models.DocumentSearchResult;
+import models.MatchRange;
+import models.Snippet;
+import testsupport.TestDocuments;
 
 /**
  * Tests for {@code SearchResultCellRenderer}. Owner: Member D.
@@ -22,7 +31,7 @@ class SearchResultCellRendererTest {
     /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
-        renderer = new SearchResultCellRenderer();
+        renderer = onEdtGet(SearchResultCellRenderer::new);
     }
 
     /**
@@ -34,9 +43,27 @@ class SearchResultCellRendererTest {
      * null value renders 'Select a document'.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-33 two columns: title | snippet (UC2, U4)")
     void render_result_showsTitleAndEscapedHighlightedSnippet() {
-        fail("TODO: Member D - D-33");
+        // Arrange
+        String text = "a<b NEEDLE &c";
+        DocumentSearchResult result = new DocumentSearchResult(TestDocuments.document("Doc \"1\"", text),
+                List.of(new MatchRange(4, 10)), new Snippet(text, new MatchRange(4, 10), false, false));
+        JList<DocumentSearchResult> list = onEdtGet(JList::new);
+
+        // Act
+        List<String> resultTexts = onEdtGet(() -> {
+            renderer.getListCellRendererComponent(list, result, 0, false, false);
+            return List.of(renderer.titleLabel().getText(), renderer.snippetLabel().getText());
+        });
+        String nullTitle = onEdtGet(() -> {
+            renderer.getListCellRendererComponent(list, null, -1, false, false);
+            return renderer.titleLabel().getText();
+        });
+
+        // Assert
+        assertEquals("Doc \"1\"", resultTexts.get(0));
+        assertEquals("<html>a&lt;b <b>NEEDLE</b> &amp;c</html>", resultTexts.get(1));
+        assertEquals("Select a document", nullTitle);
     }
 }

@@ -1,9 +1,24 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static views.SwingTestSupport.onEdt;
+import static views.SwingTestSupport.onEdtGet;
 
+import java.awt.GraphicsEnvironment;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JSplitPane;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -31,12 +46,21 @@ class MainFrameTest {
     /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "MainFrame needs a display");
         lifecycle = new FakeLifecycleController();
-        frame = new MainFrame(
+        frame = onEdtGet(() -> new MainFrame(
                 new FakeDocumentLibraryController(),
                 new FakeSearchController(),
                 lifecycle,
-                new ScriptedDialogService());
+                new ScriptedDialogService()));
+    }
+
+    /** Disposes the frame (no window left behind). */
+    @AfterEach
+    void tearDown() {
+        if (frame != null) {
+            onEdt(frame::dispose);
+        }
     }
 
     /**
@@ -48,10 +72,29 @@ class MainFrameTest {
      * panel left and results pane right.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-48 single window layout (U1)")
     void constructor_buildsSingleFrameWithMenusAndSplitPane() {
-        fail("TODO: Member D - D-48");
+        // Act
+        List<String> menus = onEdtGet(() -> {
+            JMenuBar menuBar = frame.getJMenuBar();
+            List<String> texts = new ArrayList<>();
+            for (int menuIndex = 0; menuIndex < menuBar.getMenuCount(); menuIndex++) {
+                JMenu menu = menuBar.getMenu(menuIndex);
+                StringBuilder entry = new StringBuilder(menu.getText()).append(':');
+                for (int itemIndex = 0; itemIndex < menu.getItemCount(); itemIndex++) {
+                    JMenuItem item = menu.getItem(itemIndex);
+                    entry.append(item == null ? "|" : "[" + item.getText() + "]");
+                }
+                texts.add(entry.toString());
+            }
+            return texts;
+        });
+
+        // Assert
+        assertEquals(List.of("File:[Import...]|[Exit]", "Search:[Search By...]"), menus);
+        JSplitPane splitPane = assertInstanceOf(JSplitPane.class, onEdtGet(frame::getContentPane));
+        assertSame(frame.libraryPanel(), onEdtGet(splitPane::getLeftComponent));
+        assertSame(frame.searchResultsPane(), onEdtGet(splitPane::getRightComponent));
     }
 
     /**
@@ -62,9 +105,13 @@ class MainFrameTest {
      * <p>Assert: lifecycle.shutdownCalls 1; frame not displayable.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-49 Exit (U1, R8)")
     void onExitRequested_shutsDownAndDisposes() {
-        fail("TODO: Member D - D-49");
+        // Act
+        onEdt(frame::onExitRequested);
+
+        // Assert
+        assertEquals(1, lifecycle.shutdownCalls());
+        assertFalse(onEdtGet(frame::isDisplayable));
     }
 }

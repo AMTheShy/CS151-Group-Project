@@ -1,12 +1,18 @@
 package views;
 
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.FlowLayout;
 import java.util.List;
 import java.util.Objects;
 
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableColumn;
 
 import controllers.DocumentLibraryController;
 import controllers.LibraryListener;
@@ -37,7 +43,8 @@ import models.LoadSummary;
  * {@code tableModel.setDocuments}; {@code onStartupLoadProgress(k, n)} &rarr; label
  * {@code "Loading saved documents... k / n"}; {@code onStartupLoadCompleted} &rarr; label
  * {@code "n documents"} (and if {@code summary.hasProblems()}, append
- * {@code " (m could not be loaded)"} with the problems as tooltip); {@code onStartupLoadFailed}
+ * {@code " (m could not be loaded)"} with the problems as tooltip); after the startup load has
+ * ended, every {@code onDocumentsChanged} refreshes the count from the table; {@code onStartupLoadFailed}
  * &rarr; {@code dialogs.showError("Loading saved documents failed", message)};
  * {@code onDeleteFailed} &rarr; {@code dialogs.showError("Delete failed", message)}.</p>
  *
@@ -46,6 +53,15 @@ import models.LoadSummary;
 public final class DocumentLibraryPanel extends JPanel implements LibraryListener {
 
     private static final long serialVersionUID = 1L;
+
+    /** Preferred width of the Title column in pixels. */
+    private static final int TITLE_COLUMN_WIDTH = 200;
+
+    /** Width of the Delete column in pixels. */
+    private static final int DELETE_COLUMN_WIDTH = 60;
+
+    /** Vertical gap between the parts of the panel in pixels. */
+    private static final int LAYOUT_GAP = 4;
 
     /** Starts deletions; queried for nothing else. */
     private final transient DocumentLibraryController libraryController;
@@ -68,6 +84,12 @@ public final class DocumentLibraryPanel extends JPanel implements LibraryListene
     /** Import progress rows. */
     private final ImportProgressPanel importProgressPanel;
 
+    /** Problems reported by the startup load; shown as suffix and tooltip of the status line. */
+    private transient List<String> loadProblems = List.of();
+
+    /** Whether the startup load has ended; from then on the status line shows the document count. */
+    private boolean startupLoadFinished;
+
     /**
      * Creates the panel.
      *
@@ -81,42 +103,121 @@ public final class DocumentLibraryPanel extends JPanel implements LibraryListene
         this.libraryController = Objects.requireNonNull(libraryController, "libraryController");
         this.dialogs = Objects.requireNonNull(dialogs, "dialogs");
         this.importProgressPanel = Objects.requireNonNull(importProgressPanel, "importProgressPanel");
-        // TODO: Member D - build layout, configure table, wire the Delete button (see class Javadoc)
+        configureTable();
+        deleteButton.setEnabled(false);
+        deleteButton.addActionListener(event -> onDeleteClicked());
+        tableModel.addTableModelListener(event -> deleteButton.setEnabled(tableModel.hasSelection()));
+
+        setLayout(new BorderLayout(0, LAYOUT_GAP));
+        add(startupStatusLabel, BorderLayout.NORTH);
+        add(new JScrollPane(documentTable), BorderLayout.CENTER);
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        buttonPanel.add(deleteButton);
+        JPanel southPanel = new JPanel(new BorderLayout(0, LAYOUT_GAP));
+        southPanel.add(buttonPanel, BorderLayout.NORTH);
+        southPanel.add(importProgressPanel, BorderLayout.CENTER);
+        add(southPanel, BorderLayout.SOUTH);
     }
 
     /** {@inheritDoc} Test: D-30. */
     @Override
     public void onDocumentsChanged(List<DocumentSummary> sortedDocuments) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(sortedDocuments, "sortedDocuments");
+        tableModel.setDocuments(sortedDocuments);
+        if (startupLoadFinished) {
+            showDocumentCount(tableModel.getRowCount());
+        }
     }
 
     /** {@inheritDoc} Test: D-31. */
     @Override
     public void onStartupLoadProgress(int processedCount, int totalCount) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        startupStatusLabel.setText("Loading saved documents... " + processedCount + " / " + totalCount);
     }
 
     /** {@inheritDoc} Test: D-31. */
     @Override
     public void onStartupLoadCompleted(LoadSummary summary) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(summary, "summary");
+        startupLoadFinished = true;
+        loadProblems = summary.problems();
+        showDocumentCount(summary.loadedCount());
     }
 
     /** {@inheritDoc} */
     @Override
     public void onStartupLoadFailed(String message) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(message, "message");
+        startupLoadFinished = true;
+        showDocumentCount(tableModel.getRowCount());
+        dialogs.showError("Loading saved documents failed", message);
     }
 
     /** {@inheritDoc} */
     @Override
     public void onDeleteFailed(String message) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(message, "message");
+        dialogs.showError("Delete failed", message);
     }
 
     /** Handles a click on the Delete button (D-29). */
     void onDeleteClicked() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        List<String> titles = tableModel.selectedTitles();
+        if (titles.isEmpty()) {
+            return;
+        }
+        if (dialogs.confirmDelete(titles)) {
+            libraryController.deleteDocuments(titles);
+            tableModel.clearSelection();
+        }
+    }
+
+    /**
+     * Shows {@code "n documents"} plus the startup problems suffix, if any.
+     *
+     * @param count the number of documents
+     */
+    private void showDocumentCount(int count) {
+        String text = count == 1 ? "1 document" : count + " documents";
+        if (loadProblems.isEmpty()) {
+            startupStatusLabel.setText(text);
+            startupStatusLabel.setToolTipText(null);
+            return;
+        }
+        startupStatusLabel.setText(text + " (" + loadProblems.size() + " could not be loaded)");
+        StringBuilder tooltip = new StringBuilder("<html>");
+        for (String problem : loadProblems) {
+            tooltip.append(SearchResultCellRenderer.escapeHtml(problem)).append("<br>");
+        }
+        startupStatusLabel.setToolTipText(tooltip.append("</html>").toString());
+    }
+
+    /** Configures columns, sorting and renderers of the document table. */
+    private void configureTable() {
+        documentTable.setAutoCreateRowSorter(false);
+        documentTable.setRowSorter(null);
+        documentTable.setFillsViewportHeight(true);
+        documentTable.getTableHeader().setReorderingAllowed(false);
+        documentTable.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+        TableColumn titleColumn = documentTable.getColumnModel().getColumn(DocumentTableModel.TITLE_COLUMN);
+        titleColumn.setPreferredWidth(TITLE_COLUMN_WIDTH);
+        TableColumn deleteColumn = documentTable.getColumnModel().getColumn(DocumentTableModel.DELETE_COLUMN);
+        deleteColumn.setPreferredWidth(DELETE_COLUMN_WIDTH);
+        deleteColumn.setMaxWidth(DELETE_COLUMN_WIDTH);
+        documentTable.getColumnModel().getColumn(DocumentTableModel.PREVIEW_COLUMN)
+                .setCellRenderer(new DefaultTableCellRenderer() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Component getTableCellRendererComponent(JTable table, Object value,
+                                                                   boolean isSelected, boolean hasFocus,
+                                                                   int row, int column) {
+                        Component cell = super.getTableCellRendererComponent(table, value, isSelected,
+                                hasFocus, row, column);
+                        setToolTipText(value == null ? null : value.toString());
+                        return cell;
+                    }
+                });
     }
 
     /**

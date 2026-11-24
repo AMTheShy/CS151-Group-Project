@@ -1,11 +1,20 @@
 package views;
 
+import java.awt.Dimension;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.util.Objects;
 
 import javax.swing.JFrame;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JSplitPane;
+import javax.swing.KeyStroke;
+import javax.swing.WindowConstants;
 
 import controllers.DocumentLibraryController;
 import controllers.LibraryListener;
@@ -13,6 +22,7 @@ import controllers.LifecycleController;
 import controllers.SearchController;
 import models.Document;
 import models.ImportProgress;
+import views.support.ImportProgressTracker;
 
 /**
  * The single application window (U1).
@@ -55,6 +65,15 @@ public final class MainFrame extends JFrame implements LibraryListener {
 
     private static final long serialVersionUID = 1L;
 
+    /** Initial window size. */
+    private static final Dimension DEFAULT_SIZE = new Dimension(1200, 800);
+
+    /** Minimum window size. */
+    private static final Dimension MINIMUM_SIZE = new Dimension(800, 500);
+
+    /** Share of extra width given to the left side; also the initial divider position. */
+    private static final double SPLIT_RESIZE_WEIGHT = 0.4;
+
     /** Library use cases. */
     private final transient DocumentLibraryController libraryController;
 
@@ -79,6 +98,18 @@ public final class MainFrame extends JFrame implements LibraryListener {
     /** Left/right split. */
     private final JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 
+    /** Left side. */
+    private final DocumentLibraryPanel libraryPanel;
+
+    /** Right side. */
+    private final SearchResultsPane searchResultsPane;
+
+    /** File &rarr; Import... */
+    private final transient ImportWorkflow importWorkflow;
+
+    /** Search &rarr; Search By... */
+    private final transient SearchQueryWorkflow searchQueryWorkflow;
+
     /**
      * Builds the window (not yet visible).
      *
@@ -95,39 +126,124 @@ public final class MainFrame extends JFrame implements LibraryListener {
         this.searchController = Objects.requireNonNull(searchController, "searchController");
         this.lifecycleController = Objects.requireNonNull(lifecycleController, "lifecycleController");
         this.dialogs = Objects.requireNonNull(dialogs, "dialogs");
-        // TODO: Member D - menus, split pane, panels, listener registration, window listener (see class Javadoc)
+        if (dialogs instanceof SwingDialogService) {
+            ((SwingDialogService) dialogs).setParent(this);
+        }
+        ImportProgressPanel importProgressPanel = new ImportProgressPanel(new ImportProgressTracker());
+        libraryPanel = new DocumentLibraryPanel(libraryController, dialogs, importProgressPanel);
+        searchResultsPane = new SearchResultsPane(searchController, libraryController, dialogs);
+        importWorkflow = new ImportWorkflow(libraryController, dialogs);
+        searchQueryWorkflow = new SearchQueryWorkflow(dialogs);
+
+        buildMenus();
+        splitPane.setLeftComponent(libraryPanel);
+        splitPane.setRightComponent(searchResultsPane);
+        splitPane.setResizeWeight(SPLIT_RESIZE_WEIGHT);
+        splitPane.setDividerLocation((int) (DEFAULT_SIZE.width * SPLIT_RESIZE_WEIGHT));
+        setContentPane(splitPane);
+
+        libraryController.addLibraryListener(libraryPanel);
+        libraryController.addLibraryListener(importProgressPanel);
+        libraryController.addLibraryListener(this);
+        libraryPanel.onDocumentsChanged(libraryController.currentDocuments());
+
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent event) {
+                onExitRequested();
+            }
+        });
+        setSize(DEFAULT_SIZE);
+        setMinimumSize(MINIMUM_SIZE);
+        setLocationRelativeTo(null);
     }
 
     /** File &rarr; Import... (UC1). */
     void onImportRequested() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        importWorkflow.run();
     }
 
     /** Search &rarr; Search By... (UC2). */
     void onSearchRequested() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        searchQueryWorkflow.promptForQuery().ifPresent(searchResultsPane::openSearch);
     }
 
     /** File &rarr; Exit and window close (D-49). */
     void onExitRequested() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        lifecycleController.shutdown();
+        dispose();
     }
 
     /** {@inheritDoc} */
     @Override
     public void onImportFailed(ImportProgress failed) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(failed, "failed");
+        dialogs.showError("Import failed", "Could not import \"" + failed.title() + "\": "
+                + failed.errorMessage().orElse("unknown error"));
     }
 
     /** {@inheritDoc} */
     @Override
     public void onExportCompleted(Document document, Path target) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(document, "document");
+        Objects.requireNonNull(target, "target");
+        dialogs.showInfo("Download complete", "Saved \"" + document.title() + "\" to " + target);
     }
 
     /** {@inheritDoc} */
     @Override
     public void onExportFailed(Document document, Path target, String message) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(message, "message");
+        dialogs.showError("Download failed", message);
+    }
+
+    /**
+     * Test accessor (D-48).
+     *
+     * @return the split pane
+     */
+    JSplitPane splitPane() {
+        return splitPane;
+    }
+
+    /**
+     * Test accessor (D-48).
+     *
+     * @return the library panel
+     */
+    DocumentLibraryPanel libraryPanel() {
+        return libraryPanel;
+    }
+
+    /**
+     * Test accessor (D-48).
+     *
+     * @return the search results pane
+     */
+    SearchResultsPane searchResultsPane() {
+        return searchResultsPane;
+    }
+
+    /** Builds File and Search menus with accelerators. */
+    private void buildMenus() {
+        importMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.CTRL_DOWN_MASK));
+        importMenuItem.addActionListener(event -> onImportRequested());
+        exitMenuItem.addActionListener(event -> onExitRequested());
+        searchMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_DOWN_MASK));
+        searchMenuItem.addActionListener(event -> onSearchRequested());
+
+        JMenu fileMenu = new JMenu("File");
+        fileMenu.setMnemonic(KeyEvent.VK_F);
+        fileMenu.add(importMenuItem);
+        fileMenu.addSeparator();
+        fileMenu.add(exitMenuItem);
+        JMenu searchMenu = new JMenu("Search");
+        searchMenu.setMnemonic(KeyEvent.VK_S);
+        searchMenu.add(searchMenuItem);
+        JMenuBar menuBar = new JMenuBar();
+        menuBar.add(fileMenu);
+        menuBar.add(searchMenu);
+        setJMenuBar(menuBar);
     }
 }

@@ -1,7 +1,9 @@
 package views.support;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -35,7 +37,12 @@ public final class DeletionSelection {
      * @param selected the new state
      */
     public void setSelected(String title, boolean selected) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(title, "title");
+        if (selected) {
+            selectedTitles.add(title);
+        } else {
+            selectedTitles.remove(title);
+        }
     }
 
     /**
@@ -45,7 +52,10 @@ public final class DeletionSelection {
      * @return the new state
      */
     public boolean toggle(String title) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(title, "title");
+        boolean newState = !selectedTitles.contains(title);
+        setSelected(title, newState);
+        return newState;
     }
 
     /**
@@ -55,7 +65,8 @@ public final class DeletionSelection {
      * @return {@code true} if ticked
      */
     public boolean isSelected(String title) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(title, "title");
+        return selectedTitles.contains(title);
     }
 
     /**
@@ -64,7 +75,9 @@ public final class DeletionSelection {
      * @param existingTitles titles that still exist, not {@code null}
      */
     public void retainOnly(Collection<String> existingTitles) {
-        throw new UnsupportedOperationException("TODO: Member D");
+        Objects.requireNonNull(existingTitles, "existingTitles");
+        Set<String> existing = new HashSet<>(existingTitles);
+        selectedTitles.removeIf(title -> !existing.contains(title));
     }
 
     /**
@@ -73,7 +86,7 @@ public final class DeletionSelection {
      * @return immutable list sorted by {@code TITLE_ORDER}
      */
     public List<String> selectedTitles() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return List.copyOf(selectedTitles);
     }
 
     /**
@@ -82,11 +95,11 @@ public final class DeletionSelection {
      * @return {@code true} if empty
      */
     public boolean isEmpty() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        return selectedTitles.isEmpty();
     }
 
     /** Unticks everything. */
     public void clear() {
-        throw new UnsupportedOperationException("TODO: Member D");
+        selectedTitles.clear();
     }
 }

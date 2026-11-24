@@ -1,12 +1,15 @@
 package views;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static views.SwingTestSupport.onEdt;
+import static views.SwingTestSupport.onEdtGet;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import models.ImportProgress;
 import views.support.ImportProgressTracker;
 
 /**
@@ -24,7 +27,7 @@ class ImportProgressPanelTest {
     /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
-        panel = new ImportProgressPanel(new ImportProgressTracker());
+        panel = onEdtGet(() -> new ImportProgressPanel(new ImportProgressTracker()));
     }
 
     /**
@@ -35,9 +38,20 @@ class ImportProgressPanelTest {
      * <p>Assert: visibleRowCount 2; panel visible; row 2 shows failure.</p>
      */
     @Test
-    @Disabled("TODO: Member D")
     @DisplayName("D-32 progress rows (U2)")
     void onImportProgress_events_createUpdateAndKeepFailedRows() {
-        fail("TODO: Member D - D-32");
+        // Act
+        onEdt(() -> {
+            panel.onImportProgress(ImportProgress.queued(1, "A"));
+            panel.onImportProgress(ImportProgress.queued(2, "B"));
+            panel.onImportProgress(ImportProgress.reading(1, "A", 50, 100));
+            panel.onImportProgress(ImportProgress.failed(2, "B", 0, 0, "File \"b.txt\" is not ASCII."));
+        });
+
+        // Assert
+        assertEquals(2, onEdtGet(panel::visibleRowCount));
+        assertTrue(onEdtGet(panel::isVisible));
+        assertEquals("Reading 50%", onEdtGet(() -> panel.statusTextOf(1)).orElseThrow());
+        assertEquals("Failed: File \"b.txt\" is not ASCII.", onEdtGet(() -> panel.statusTextOf(2)).orElseThrow());
     }
 }
