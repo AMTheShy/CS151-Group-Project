@@ -1,5 +1,5 @@
 package controllers;
-//MEMBER C
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,15 +19,26 @@ import org.junit.jupiter.api.Test;
 
 import models.SearchQuery;
 
+/**
+ * Tests for {@code DefaultSearchHandle}. Owner: Member C.
+ *
+ * <p>Case C-39 of {@code design/test-plan.md}. The method name and display name
+ * identify the test case.</p>
+ */
 class DefaultSearchHandleTest {
 
     private DefaultSearchHandle handle;
 
+    /** Creates fresh fixtures for every test. */
     @BeforeEach
     void setUp() {
         handle = new DefaultSearchHandle(SearchQuery.of("q"));
     }
 
+    /**
+     * C-39 verifies search cancellation before and after completion, then races
+     * cancellation against completion across 1,000 rounds. Exactly one wins each round.
+     */
     @Test
     @Tag("concurrency")
     @DisplayName("C-39 CAS state machine (R5)")
