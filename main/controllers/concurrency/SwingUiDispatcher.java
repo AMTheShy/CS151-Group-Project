@@ -1,5 +1,9 @@
 package controllers.concurrency;
 
+import java.util.Objects;
+
+import javax.swing.SwingUtilities;
+
 import controllers.UiDispatcher;
 
 /**
@@ -20,12 +24,11 @@ public final class SwingUiDispatcher implements UiDispatcher {
 
     /** Creates the dispatcher. */
     public SwingUiDispatcher() {
-        // stateless
     }
 
     /** {@inheritDoc} Tests: C-36, C-37. */
     @Override
     public void dispatch(Runnable task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        SwingUtilities.invokeLater(Objects.requireNonNull(task, "task"));
     }
 }

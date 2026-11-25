@@ -45,15 +45,13 @@ public final class DefaultSearchHandle implements SearchHandle {
 
     /** The query of this search. */
     private final SearchQuery query;
-
     /** Observed by the search engine on every worker; set by {@link #cancel()}. */
     private final SimpleCancellationToken token = new SimpleCancellationToken();
-
     /** Per-document worker futures, cancelled with {@code cancel(true)} by {@link #cancel()}. */
     private final List<Future<?>> futures = new CopyOnWriteArrayList<>();
-
     /** Current state; transitions only via CAS. */
-    private final AtomicReference<State> state = new AtomicReference<>(State.RUNNING);
+    private final AtomicReference<State> state =
+            new AtomicReference<>(State.RUNNING);
 
     /**
      * Creates a running handle.
@@ -68,7 +66,7 @@ public final class DefaultSearchHandle implements SearchHandle {
     /** {@inheritDoc} */
     @Override
     public SearchQuery query() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return query;
     }
 
     /**
@@ -79,19 +77,24 @@ public final class DefaultSearchHandle implements SearchHandle {
      */
     @Override
     public void cancel() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        if (state.compareAndSet(State.RUNNING, State.CANCELLED)) {
+            token.cancel();
+            for (Future<?> future : futures) {
+                future.cancel(true);
+            }
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public boolean isCancelled() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return state.get() == State.CANCELLED;
     }
 
     /** {@inheritDoc} */
     @Override
     public boolean isDone() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return state.get() != State.RUNNING;
     }
 
     /**
@@ -100,7 +103,7 @@ public final class DefaultSearchHandle implements SearchHandle {
      * @return the cancellation token
      */
     CancellationToken token() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return token;
     }
 
     /**
@@ -110,7 +113,15 @@ public final class DefaultSearchHandle implements SearchHandle {
      * @param workerFutures the futures, not {@code null}
      */
     void attachFutures(List<? extends Future<?>> workerFutures) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        List<Future<?>> pending = List.copyOf(workerFutures);
+        futures.addAll(pending);
+
+        // Cancellation may have started before these futures were added.
+        if (isCancelled()) {
+            for (Future<?> future : pending) {
+                future.cancel(true);
+            }
+        }
     }
 
     /**
@@ -120,7 +131,7 @@ public final class DefaultSearchHandle implements SearchHandle {
      * @return {@code true} if the caller may deliver the result
      */
     boolean tryComplete() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return state.compareAndSet(State.RUNNING, State.COMPLETED);
     }
 
     /**
@@ -130,6 +141,6 @@ public final class DefaultSearchHandle implements SearchHandle {
      * @return {@code true} if the caller may deliver the failure
      */
     boolean tryFail() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return state.compareAndSet(State.RUNNING, State.FAILED);
     }
 }

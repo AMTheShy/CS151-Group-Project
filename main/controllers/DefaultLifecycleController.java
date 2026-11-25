@@ -23,13 +23,10 @@ public final class DefaultLifecycleController implements LifecycleController {
 
     /** Library controller whose imports are cancelled. */
     private final DefaultDocumentLibraryController libraryController;
-
     /** Search controller whose searches are cancelled. */
     private final DefaultSearchController searchController;
-
     /** Pools to stop. */
     private final TaskScheduler scheduler;
-
     /** Guards idempotency. */
     private final AtomicBoolean shutDown = new AtomicBoolean();
 
@@ -42,7 +39,8 @@ public final class DefaultLifecycleController implements LifecycleController {
      * @throws NullPointerException if an argument is {@code null}
      */
     public DefaultLifecycleController(DefaultDocumentLibraryController libraryController,
-                                      DefaultSearchController searchController, TaskScheduler scheduler) {
+                                      DefaultSearchController searchController,
+                                      TaskScheduler scheduler) {
         this.libraryController = Objects.requireNonNull(libraryController, "libraryController");
         this.searchController = Objects.requireNonNull(searchController, "searchController");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
@@ -51,6 +49,10 @@ public final class DefaultLifecycleController implements LifecycleController {
     /** {@inheritDoc} Test: C-38. */
     @Override
     public void shutdown() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        if (shutDown.compareAndSet(false, true)) {
+            searchController.cancelAll();
+            libraryController.cancelAll();
+            scheduler.shutdownNow();
+        }
     }
 }

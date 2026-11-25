@@ -2,8 +2,11 @@ package controllers.concurrency;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 
 /**
@@ -27,6 +30,9 @@ import java.util.function.Supplier;
  * </ul>
  *
  * <p><b>Threading:</b> Not thread-safe; confined to the test thread.</p>
+ *
+ * <p><b>Implementation notes:</b> Shutdown also cancels the futures associated with dropped
+ * tasks, so callers can observe their terminal state.</p>
  */
 public final class ManualTaskScheduler implements TaskScheduler {
 
@@ -41,32 +47,45 @@ public final class ManualTaskScheduler implements TaskScheduler {
 
     /** Creates an empty scheduler. */
     public ManualTaskScheduler() {
-        // empty
     }
 
     @Override
     public Future<?> submitImport(Runnable task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return enqueue(task);
     }
 
     @Override
     public <T> CompletableFuture<T> supplySearch(Supplier<T> task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        Objects.requireNonNull(task, "task");
+        requireRunning();
+
+        searchTaskCount++;
+        CompletableFuture<T> future = new CompletableFuture<>();
+        queue.addLast(new QueuedSearch<>(task, future));
+        return future;
     }
 
     @Override
     public Future<?> submitBackground(Runnable task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return enqueue(task);
     }
 
     @Override
     public void shutdownNow() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        shutdown = true;
+        while (!queue.isEmpty()) {
+            Runnable task = queue.removeFirst();
+            if (task instanceof Future<?> future) {
+                future.cancel(false);
+            } else if (task instanceof QueuedSearch<?> search) {
+                search.future().cancel(false);
+            }
+        }
     }
 
     @Override
     public boolean isShutdown() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return shutdown;
     }
 
     /**
@@ -75,7 +94,13 @@ public final class ManualTaskScheduler implements TaskScheduler {
      * @return {@code true} if a task was run
      */
     public boolean runNext() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        Runnable task = queue.pollFirst();
+        if (task == null) {
+            return false;
+        }
+
+        task.run();
+        return true;
     }
 
     /**
@@ -84,7 +109,11 @@ public final class ManualTaskScheduler implements TaskScheduler {
      * @return the number of tasks run
      */
     public int runAll() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        int count = 0;
+        while (runNext()) {
+            count++;
+        }
+        return count;
     }
 
     /**
@@ -93,7 +122,7 @@ public final class ManualTaskScheduler implements TaskScheduler {
      * @return pending count
      */
     public int pendingCount() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return queue.size();
     }
 
     /**
@@ -102,6 +131,46 @@ public final class ManualTaskScheduler implements TaskScheduler {
      * @return the count
      */
     public int searchTaskCount() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return searchTaskCount;
+    }
+
+    private Future<?> enqueue(Runnable task) {
+        Objects.requireNonNull(task, "task");
+        requireRunning();
+
+        FutureTask<Void> future = new FutureTask<>(task, null) {
+            @Override
+            protected void done() {
+                if (isCancelled()) {
+                    queue.remove(this);
+                }
+            }
+        };
+
+        queue.addLast(future);
+        return future;
+    }
+
+    private void requireRunning() {
+        if (shutdown) {
+            throw new RejectedExecutionException("Scheduler is shut down");
+        }
+    }
+
+    private record QueuedSearch<T>(
+            Supplier<T> task,
+            CompletableFuture<T> future
+    ) implements Runnable {
+
+        @Override
+        public void run() {
+            if (!future.isCancelled()) {
+                try {
+                    future.complete(task.get());
+                } catch (Throwable failure) {
+                    future.completeExceptionally(failure);
+                }
+            }
+        }
     }
 }

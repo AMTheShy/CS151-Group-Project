@@ -2,11 +2,29 @@ package app;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+import javax.swing.SwingUtilities;
+
+import controllers.DefaultDocumentLibraryController;
+import controllers.DefaultLifecycleController;
+import controllers.DefaultSearchController;
 import controllers.DocumentLibraryController;
 import controllers.LifecycleController;
 import controllers.SearchController;
 import controllers.UiDispatcher;
+import controllers.concurrency.ExecutorTaskScheduler;
+import controllers.concurrency.SwingUiDispatcher;
+import models.AppConstants;
+import models.search.DefaultSnippetExtractor;
+import models.search.LinearScanSearchEngine;
+import models.storage.DefaultDocumentRepository;
+import models.storage.FileSystemDocumentExporter;
+import models.storage.FileSystemDocumentStore;
+import models.storage.StreamingDocumentLoader;
+import views.MainFrame;
+import views.SwingDialogService;
 
 /**
  * Composition root and entry point of the Local Search Engine.
@@ -44,6 +62,9 @@ import controllers.UiDispatcher;
  * {@code main} itself returns immediately.</p>
  *
  * <p><b>Threading:</b> {@code main} runs on the main thread; GUI creation on the EDT.</p>
+ *
+ * <p><b>Implementation notes:</b> Initialization failures shut down the scheduler or
+ * lifecycle before propagating to the caller or EDT.</p>
  */
 public final class LocalSearchEngineApp {
 
@@ -54,8 +75,10 @@ public final class LocalSearchEngineApp {
      * @param search    the search facade
      * @param lifecycle shutdown
      */
-    public record Components(DocumentLibraryController library, SearchController search,
-                             LifecycleController lifecycle) {
+    public record Components(
+            DocumentLibraryController library,
+            SearchController search,
+            LifecycleController lifecycle) {
 
         /**
          * Validates the components.
@@ -79,7 +102,21 @@ public final class LocalSearchEngineApp {
      * @param args ignored
      */
     public static void main(String[] args) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        Logger.getLogger("").setLevel(Level.INFO);
+        Components components = wire(
+                AppConstants.defaultDocumentsDirectory(), new SwingUiDispatcher());
+
+        SwingUtilities.invokeLater(() -> {
+            try {
+                MainFrame frame = new MainFrame(components.library(), components.search(),
+                        components.lifecycle(), new SwingDialogService());
+                frame.setVisible(true);
+                components.library().loadPersistedDocuments();
+            } catch (RuntimeException failure) {
+                components.lifecycle().shutdown();
+                throw failure;
+            }
+        });
     }
 
     /**
@@ -92,6 +129,25 @@ public final class LocalSearchEngineApp {
      * @throws NullPointerException if an argument is {@code null}
      */
     public static Components wire(Path documentsDirectory, UiDispatcher uiDispatcher) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        Objects.requireNonNull(documentsDirectory, "documentsDirectory");
+        Objects.requireNonNull(uiDispatcher, "uiDispatcher");
+
+        var repository = new DefaultDocumentRepository(
+                new FileSystemDocumentStore(documentsDirectory));
+        var snippets = new DefaultSnippetExtractor();
+        var scheduler = ExecutorTaskScheduler.createDefault();
+
+        try {
+            var library = new DefaultDocumentLibraryController(
+                    repository, new StreamingDocumentLoader(),
+                    new FileSystemDocumentExporter(), snippets, scheduler, uiDispatcher);
+            var search = new DefaultSearchController(
+                    repository, new LinearScanSearchEngine(snippets), scheduler, uiDispatcher);
+            return new Components(
+                    library, search, new DefaultLifecycleController(library, search, scheduler));
+        } catch (RuntimeException failure) {
+            scheduler.shutdownNow();
+            throw failure;
+        }
     }
 }

@@ -1,12 +1,21 @@
 package controllers.concurrency;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import models.AppConstants;
+import models.OperationCancelledException;
 
 /**
  * Production {@link TaskScheduler} backed by three fixed-size {@link ExecutorService}s.
@@ -34,11 +43,15 @@ import models.AppConstants;
  * </ul>
  *
  * <p><b>Threading:</b> Thread-safe.</p>
+ *
+ * <p><b>Implementation notes:</b> Search futures are tracked until completion so shutdown
+ * can cancel futures for work removed from the executor queues.</p>
  */
 public final class ExecutorTaskScheduler implements TaskScheduler {
 
     /** Logger for uncaught task failures. */
-    private static final Logger LOGGER = Logger.getLogger(ExecutorTaskScheduler.class.getName());
+    private static final Logger LOGGER =
+            Logger.getLogger(ExecutorTaskScheduler.class.getName());
 
     /** Pool for imports, size {@code importThreads}. */
     private final ExecutorService importPool;
@@ -48,6 +61,9 @@ public final class ExecutorTaskScheduler implements TaskScheduler {
 
     /** Pool for startup load, delete and export, size {@code backgroundThreads}. */
     private final ExecutorService backgroundPool;
+
+    /** Search futures that may still need cancellation during shutdown. */
+    private final Set<CompletableFuture<?>> searches = ConcurrentHashMap.newKeySet();
 
     /**
      * Creates the three pools.
@@ -69,38 +85,71 @@ public final class ExecutorTaskScheduler implements TaskScheduler {
      * @return a new scheduler
      */
     public static ExecutorTaskScheduler createDefault() {
-        return new ExecutorTaskScheduler(AppConstants.IMPORT_THREAD_COUNT, AppConstants.searchThreadCount(),
+        return new ExecutorTaskScheduler(
+                AppConstants.IMPORT_THREAD_COUNT,
+                AppConstants.searchThreadCount(),
                 AppConstants.BACKGROUND_THREAD_COUNT);
     }
 
     /** {@inheritDoc} Test: C-31. */
     @Override
     public Future<?> submitImport(Runnable task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return importPool.submit(logFailures(task));
     }
 
     /** {@inheritDoc} Test: C-32. */
     @Override
     public <T> CompletableFuture<T> supplySearch(Supplier<T> task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(
+                Objects.requireNonNull(task, "task"), searchPool);
+        searches.add(future);
+        future.whenComplete((result, failure) -> searches.remove(future));
+
+        if (searchPool.isShutdown()) {
+            future.cancel(false);
+        }
+
+        return future;
     }
 
     /** {@inheritDoc} */
     @Override
     public Future<?> submitBackground(Runnable task) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return backgroundPool.submit(logFailures(task));
     }
 
     /** {@inheritDoc} Test: C-34. */
     @Override
     public void shutdownNow() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        for (ExecutorService pool : List.of(importPool, searchPool, backgroundPool)) {
+            for (Runnable dropped : pool.shutdownNow()) {
+                if (dropped instanceof Future<?> future) {
+                    future.cancel(false);
+                }
+            }
+        }
+        searches.forEach(future -> future.cancel(false));
     }
 
     /** {@inheritDoc} */
     @Override
     public boolean isShutdown() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        return importPool.isShutdown() && searchPool.isShutdown() && backgroundPool.isShutdown();
+    }
+
+    /** Logs unexpected task failures before exposing them through the task future. */
+    private static Runnable logFailures(Runnable task) {
+        Objects.requireNonNull(task, "task");
+        return () -> {
+            try {
+                task.run();
+            } catch (CancellationException | OperationCancelledException cancellation) {
+                throw cancellation;
+            } catch (RuntimeException | Error failure) {
+                LOGGER.log(Level.SEVERE, "Background task failed", failure);
+                throw failure;
+            }
+        };
     }
 
     /**
@@ -112,6 +161,13 @@ public final class ExecutorTaskScheduler implements TaskScheduler {
      * @throws IllegalArgumentException if {@code threads < 1}
      */
     private static ExecutorService newFixedPool(String namePrefix, int threads) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        AtomicInteger sequence = new AtomicInteger();
+        return Executors.newFixedThreadPool(threads, task -> {
+            Thread thread = new Thread(task, namePrefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(false);
+            thread.setUncaughtExceptionHandler((worker, failure) ->
+                    LOGGER.log(Level.SEVERE, "Uncaught failure on " + worker.getName(), failure));
+            return thread;
+        });
     }
 }

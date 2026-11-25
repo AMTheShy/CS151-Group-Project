@@ -1,45 +1,40 @@
 package controllers;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import controllers.concurrency.ManualTaskScheduler;
+import models.DocumentStorageException;
+import models.DocumentSummary;
+import models.ImportProgress;
+import models.ImportState;
+import models.InvalidDocumentException;
 import testsupport.FakeDocumentExporter;
 import testsupport.FakeDocumentLoader;
 import testsupport.FakeDocumentRepository;
 import testsupport.FakeSnippetExtractor;
 import testsupport.QueueingUiDispatcher;
 import testsupport.RecordingLibraryListener;
+import testsupport.TestDocuments;
 
-/**
- * Tests for {@code DefaultDocumentLibraryController}. Owner: Member C.
- *
- * <p>Cases C-01..C-17 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
- */
 class DefaultDocumentLibraryControllerTest {
 
+    private static final Path SOURCE = Path.of("source.txt");
+
     private FakeDocumentRepository repository;
-
     private FakeDocumentLoader loader;
-
     private FakeDocumentExporter exporter;
-
     private ManualTaskScheduler scheduler;
-
     private QueueingUiDispatcher uiDispatcher;
-
     private RecordingLibraryListener listener;
-
     private DefaultDocumentLibraryController controller;
 
-    /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
         repository = new FakeDocumentRepository();
@@ -48,256 +43,211 @@ class DefaultDocumentLibraryControllerTest {
         scheduler = new ManualTaskScheduler();
         uiDispatcher = new QueueingUiDispatcher();
         listener = new RecordingLibraryListener();
+
         controller = new DefaultDocumentLibraryController(
-                repository,
-                loader,
-                exporter,
-                new FakeSnippetExtractor(),
-                scheduler,
-                uiDispatcher);
+                repository, loader, exporter, new FakeSnippetExtractor(),
+                scheduler, uiDispatcher);
         controller.addLibraryListener(listener);
     }
 
-    /**
-     * C-01: asynchronous import returns at once (U2) [unit].
-     *
-     * <p>Arrange: importDocument(path, 'A', false); do NOT run scheduler; flush dispatcher.</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: returns id &gt; 0; loader not called yet; exactly one QUEUED progress delivered.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-01 asynchronous import returns at once (U2)")
     void importDocument_validRequest_returnsImmediatelyWithQueuedProgress() {
-        fail("TODO: Member C - C-01");
+        long id = submit("A");
+        uiDispatcher.flush();
+        assertTrue(id > 0);
+        assertTrue(loader.loadedPaths().isEmpty());
+        assertEquals(List.of(ImportState.QUEUED), states(id));
     }
 
-    /**
-     * C-02: happy path (UC1) [unit].
-     *
-     * <p>Arrange: loader.register(path, 'abc'); import; scheduler.runAll(); flush.</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: progress states QUEUED, READING..., SAVING, COMPLETED in order; repository.addCalls =
-     * [('A', false)]; onDocumentsChanged received.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-02 happy path (UC1)")
     void importDocument_successfulLoad_reportsReadingSavingCompletedAndAddsDocument() {
-        fail("TODO: Member C - C-02");
+        long id = submit("A");
+        finish();
+        assertEquals(List.of(ImportState.QUEUED, ImportState.READING,
+                ImportState.SAVING, ImportState.COMPLETED),
+                states(id).stream().distinct().toList());
+        assertEquals("text", repository.findByTitle("A").orElseThrow().content());
     }
 
-    /**
-     * C-03: invalid file (D3) [unit].
-     *
-     * <p>Arrange: loader.registerFailure(path, InvalidDocumentException NON_ASCII).</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: last progress FAILED with the exception message; onImportFailed called once after it;
-     * repository untouched.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-03 invalid file (D3)")
     void importDocument_invalidFile_reportsFailedAndImportFailed() {
-        fail("TODO: Member C - C-03");
+        loader.registerFailure(SOURCE, new InvalidDocumentException(
+                InvalidDocumentException.Reason.NON_ASCII_CONTENT, "bad ASCII"));
+        long id = controller.importDocument(SOURCE, "A", false);
+        finish();
+        List<ImportState> progress = states(id);
+        assertEquals(ImportState.FAILED, progress.get(progress.size() - 1));
+        assertEquals("bad ASCII",
+                listener.importFailures().get(0).errorMessage().orElseThrow());
     }
 
-    /**
-     * C-04: D2 race at commit [unit].
-     *
-     * <p>Arrange: repository.setBeforeAddHook(put 'A' directly); import 'A' with replace=false.</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: FAILED with 'already exists' message; repository still holds the hook's document.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-04 D2 race at commit")
     void importDocument_titleTakenAtCommit_failsWithoutOverwriting() {
-        fail("TODO: Member C - C-04");
+        repository.setBeforeAddHook(document ->
+                repository.putDirectly(TestDocuments.document("A", "original")));
+        submit("A");
+        finish();
+        assertEquals("original", repository.findByTitle("A").orElseThrow().content());
+        assertEquals(1, listener.importFailures().size());
     }
 
-    /**
-     * C-05: overwrite confirmed (D2) [unit].
-     *
-     * <p>Arrange: 'A' present; importDocument(path, 'A', true).</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: repository.addCalls last = ('A', true); COMPLETED.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-05 overwrite confirmed (D2)")
     void importDocument_replaceConfirmed_passesFlagToRepository() {
-        fail("TODO: Member C - C-05");
+        repository.putDirectly(TestDocuments.document("A", "original"));
+        loader.register(SOURCE, "updated");
+        controller.importDocument(SOURCE, "A", true);
+        finish();
+        assertTrue(repository.addCalls().get(0).replaceExisting());
+        assertEquals("updated", repository.findByTitle("A").orElseThrow().content());
     }
 
-    /**
-     * C-06: precondition [unit].
-     *
-     * <p>Arrange: importDocument(path, '  ', false).</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: IllegalArgumentException; scheduler.pendingCount() 0; no progress.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-06 precondition")
     void importDocument_invalidTitle_throwsIllegalArgumentExceptionAndSchedulesNothing() {
-        fail("TODO: Member C - C-06");
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.importDocument(SOURCE, "", false));
+        assertEquals(0, scheduler.pendingCount());
     }
 
-    /**
-     * C-07: multiple imports (U2) [unit].
-     *
-     * <p>Arrange: two imports with different paths; run tasks in reverse order.</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: ids distinct; each id has its own complete progress sequence.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-07 multiple imports (U2)")
     void importDocument_twoConcurrentImports_trackedIndependentlyById() {
-        fail("TODO: Member C - C-07");
+        long first = submit("A");
+        long second = submit("B");
+        finish();
+        assertNotEquals(first, second);
+        assertTrue(listener.isTerminal(first));
+        assertTrue(listener.isTerminal(second));
     }
 
-    /**
-     * C-08: EDT hand-off via UiDispatcher (4.3) [unit].
-     *
-     * <p>Arrange: import, run tasks, do not flush.</p>
-     * <p>Act: all callbacks.</p>
-     * <p>Assert: listener.callbackCount() 0; after flush &gt; 0 and all on test thread.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-08 EDT hand-off via UiDispatcher (4.3)")
     void callbacks_beforeFlush_nothingDelivered() {
-        fail("TODO: Member C - C-08");
+        submit("A");
+        scheduler.runAll();
+        assertEquals(0, listener.callbackCount());
+        uiDispatcher.flush();
+        assertTrue(listener.callbackCount() > 0);
     }
 
-    /**
-     * C-09: delete (UC3) [unit].
-     *
-     * <p>Arrange: 'A','B' present; repository.failRemovalOf('B'); deleteDocuments([A,B]); runAll;
-     * flush.</p>
-     * <p>Act: deleteDocuments.</p>
-     * <p>Assert: removeCalls = [[A,B]]; onDocumentsChanged without A; onDeleteFailed message mentions
-     * B.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-09 delete (UC3)")
     void deleteDocuments_runsInBackgroundAndReportsFailure() {
-        fail("TODO: Member C - C-09");
+        repository.putDirectly(TestDocuments.document("A"));
+        repository.failRemovalOf("A");
+        controller.deleteDocuments(List.of("A"));
+        assertTrue(repository.removeCalls().isEmpty());
+        finish();
+        assertEquals(List.of(List.of("A")), repository.removeCalls());
+        assertEquals(1, listener.deleteFailures().size());
     }
 
-    /**
-     * C-10: download (UC5, D8) [unit].
-     *
-     * <p>Arrange: export snapshot of deleted doc; then exporter.failWith(...) and export again.</p>
-     * <p>Act: exportDocument.</p>
-     * <p>Assert: exporter received the given snapshot; onExportCompleted then onExportFailed with
-     * message.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-10 download (UC5, D8)")
     void exportDocument_successAndFailure_reportedWithSnapshot() {
-        fail("TODO: Member C - C-10");
+        var snapshot = TestDocuments.document("A");
+        controller.exportDocument(snapshot, SOURCE);
+        assertTrue(exporter.exports().isEmpty());
+        finish();
+        assertSame(snapshot, exporter.exports().get(0).document());
+        assertTrue(listener.exportEvents().get(0).succeeded());
+
+        exporter.failWith(new DocumentStorageException("cannot export"));
+        controller.exportDocument(snapshot, SOURCE);
+        finish();
+        assertEquals("cannot export", listener.exportEvents().get(1).message());
     }
 
-    /**
-     * C-11: startup load (D5) [unit].
-     *
-     * <p>Arrange: repository.setPersistedDocuments(3 docs); call twice; runAll; flush.</p>
-     * <p>Act: loadPersistedDocuments.</p>
-     * <p>Assert: loadPersistedCalls 1; startup progress (1,3),(2,3),(3,3); onStartupLoadCompleted(3,0).</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-11 startup load (D5)")
     void loadPersistedDocuments_calledTwice_loadsOnceAndReportsProgress() {
-        fail("TODO: Member C - C-11");
+        repository.setPersistedDocuments(List.of(TestDocuments.document("A")));
+        controller.loadPersistedDocuments();
+        controller.loadPersistedDocuments();
+        finish();
+        assertEquals(1, repository.loadPersistedCalls());
+        assertFalse(listener.startupProgress().isEmpty());
+        assertEquals(1, listener.startupCompletions().size());
     }
 
-    /**
-     * C-12: startup load failure [unit].
-     *
-     * <p>Arrange: repository.failLoad(DocumentStorageException).</p>
-     * <p>Act: loadPersistedDocuments.</p>
-     * <p>Assert: onStartupLoadFailed with the message; no completion callback.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-12 startup load failure")
     void loadPersistedDocuments_storageFailure_reportsStartupLoadFailed() {
-        fail("TODO: Member C - C-12");
+        repository.failLoad(new DocumentStorageException("cannot load"));
+        controller.loadPersistedDocuments();
+        finish();
+        assertEquals(List.of("cannot load"), listener.startupFailures());
     }
 
-    /**
-     * C-13: table rows (D6, D7) [unit].
-     *
-     * <p>Arrange: add 'b','A' through repository.</p>
-     * <p>Act: currentDocuments.</p>
-     * <p>Assert: currentDocuments titles [A, b]; preview from snippet extractor (previewCalls &gt; 0).</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-13 table rows (D6, D7)")
     void currentDocuments_afterRepositoryChange_returnsSortedSummariesWithPreviews() {
-        fail("TODO: Member C - C-13");
+        add("Z", "z");
+        add("A", "x".repeat(600));
+        var rows = controller.currentDocuments();
+        assertEquals(List.of("A", "Z"), rows.stream().map(DocumentSummary::title).toList());
+        assertEquals(500, rows.get(0).preview().length());
+        assertThrows(UnsupportedOperationException.class, rows::clear);
     }
 
-    /**
-     * C-14: changes not caused by the view [unit].
-     *
-     * <p>Arrange: repository.add(...) directly (simulating startup load).</p>
-     * <p>Act: repository listener.</p>
-     * <p>Assert: onDocumentsChanged delivered after flush.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-14 changes not caused by the view")
     void repositoryChange_fromOtherSource_dispatchesDocumentsChanged() {
-        fail("TODO: Member C - C-14");
+        add("A", "text");
+        uiDispatcher.flush();
+        assertEquals("A", listener.latestDocuments().get(0).title());
     }
 
-    /**
-     * C-15: exceptions are never swallowed [unit].
-     *
-     * <p>Arrange: loader.registerRuntimeFailure(path, IllegalStateException('bug')).</p>
-     * <p>Act: importDocument.</p>
-     * <p>Assert: FAILED with 'Unexpected error' message containing 'bug'; onImportFailed called.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-15 exceptions are never swallowed")
     void importDocument_unexpectedRuntimeException_reportsFailedNotSwallowed() {
-        fail("TODO: Member C - C-15");
+        loader.registerRuntimeFailure(SOURCE, new IllegalStateException("unexpected"));
+        controller.importDocument(SOURCE, "A", false);
+        finish();
+        assertEquals("Unexpected error while importing: unexpected",
+                listener.importFailures().get(0).errorMessage().orElseThrow());
     }
 
-    /**
-     * C-16: listener management [unit].
-     *
-     * <p>Arrange: remove the recording listener; import.</p>
-     * <p>Act: add/removeLibraryListener.</p>
-     * <p>Assert: no callbacks recorded.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-16 listener management")
     void removeLibraryListener_afterRemoval_receivesNothing() {
-        fail("TODO: Member C - C-16");
+        controller.removeLibraryListener(listener);
+        submit("A");
+        finish();
+        assertEquals(0, listener.callbackCount());
     }
 
-    /**
-     * C-17: shutdown during import (R8) [unit].
-     *
-     * <p>Arrange: start import; cancelAll(); runAll; flush.</p>
-     * <p>Act: cancelAll.</p>
-     * <p>Assert: no callback after cancelAll; importDocument afterwards throws IllegalStateException.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-17 shutdown during import (R8)")
     void cancelAll_withImportInFlight_cancelsAndSilencesCallbacks() {
-        fail("TODO: Member C - C-17");
+        submit("A");
+        controller.cancelAll();
+        finish();
+        assertEquals(0, listener.callbackCount());
+        assertTrue(repository.addCalls().isEmpty());
+        assertThrows(IllegalStateException.class, () -> submit("B"));
+    }
+
+    private long submit(String title) {
+        loader.register(SOURCE, "text");
+        return controller.importDocument(SOURCE, title, false);
+    }
+
+    private void add(String title, String text) {
+        assertDoesNotThrow(() -> repository.add(TestDocuments.document(title, text), false));
+    }
+
+    private void finish() {
+        scheduler.runAll();
+        uiDispatcher.flush();
+    }
+
+    private List<ImportState> states(long id) {
+        return listener.progressOf(id).stream().map(ImportProgress::state).toList();
     }
 }

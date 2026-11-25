@@ -1,15 +1,21 @@
 package controllers;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import controllers.concurrency.TaskScheduler;
 import models.Document;
 import models.DocumentSearchResult;
+import models.OperationCancelledException;
 import models.SearchQuery;
 import models.search.SearchEngine;
 import models.storage.DocumentRepository;
@@ -46,6 +52,10 @@ import models.storage.DocumentRepository;
  *
  * <p><b>Threading:</b> Thread-safe. {@link #startSearch} is called on the EDT and returns in
  * microseconds; all scanning happens on the search pool.</p>
+ *
+ * <p><b>Implementation notes:</b> The active-search set also guards admission during
+ * shutdown. If scheduling fails partway through, already submitted futures are cancelled
+ * before the failure is reported.</p>
  */
 public final class DefaultSearchController implements SearchController {
 
@@ -54,18 +64,17 @@ public final class DefaultSearchController implements SearchController {
 
     /** Source of the snapshot (only {@code listAllSortedByTitle} is used). */
     private final DocumentRepository repository;
-
     /** The matching strategy. */
     private final SearchEngine searchEngine;
-
     /** Runs the per-document tasks on the search pool. */
     private final TaskScheduler scheduler;
-
     /** Moves the single outcome to the EDT. */
     private final UiDispatcher uiDispatcher;
-
     /** Searches that have not reached a terminal state; used by {@link #cancelAll()}. */
     private final Set<DefaultSearchHandle> activeSearches = ConcurrentHashMap.newKeySet();
+
+    /** Guards admission of new searches under the active-search lock. */
+    private boolean closed;
 
     /**
      * Creates the controller.
@@ -91,7 +100,50 @@ public final class DefaultSearchController implements SearchController {
      */
     @Override
     public SearchHandle startSearch(SearchQuery query, SearchListener listener) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(listener, "listener");
+
+        DefaultSearchHandle handle = new DefaultSearchHandle(query);
+        synchronized (activeSearches) {
+            if (closed || scheduler.isShutdown()) {
+                throw new IllegalStateException("Search controller is shut down");
+            }
+            activeSearches.add(handle);
+        }
+
+        var futures = new ArrayList<CompletableFuture<Optional<DocumentSearchResult>>>();
+
+        try {
+            for (Document document : repository.listAllSortedByTitle()) {
+                if (handle.isCancelled()) {
+                    break;
+                }
+                var future = scheduler.supplySearch(() -> searchOne(document, query, handle));
+                futures.add(future);
+            }
+            handle.attachFutures(futures);
+        } catch (RuntimeException failure) {
+            futures.forEach(future -> future.cancel(true));
+            reportFailure(handle, listener, failure);
+            return handle;
+        }
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture<?>[]::new))
+                .whenComplete((ignored, failure) -> {
+                    if (handle.isCancelled()) {
+                        activeSearches.remove(handle);
+                    } else if (failure != null) {
+                        reportFailure(handle, listener, failure);
+                    } else {
+                        var results = futures.stream()
+                                .map(CompletableFuture::join)
+                                .flatMap(Optional::stream)
+                                .toList();
+                        deliverResults(handle, listener, results);
+                    }
+                });
+
+        return handle;
     }
 
     /**
@@ -99,7 +151,13 @@ public final class DefaultSearchController implements SearchController {
      * Test: C-30.
      */
     public void cancelAll() {
-        throw new UnsupportedOperationException("TODO: Member C");
+        List<DefaultSearchHandle> snapshot;
+        synchronized (activeSearches) {
+            closed = true;
+            snapshot = List.copyOf(activeSearches);
+        }
+        snapshot.forEach(DefaultSearchHandle::cancel);
+        activeSearches.removeAll(snapshot);
     }
 
     /**
@@ -110,8 +168,26 @@ public final class DefaultSearchController implements SearchController {
      * @param handle   the handle whose token is checked
      * @return the result, or empty if no match
      */
-    private Optional<DocumentSearchResult> searchOne(Document document, SearchQuery query, DefaultSearchHandle handle) {
-        throw new UnsupportedOperationException("TODO: Member C");
+    private Optional<DocumentSearchResult> searchOne(
+            Document document, SearchQuery query, DefaultSearchHandle handle) {
+        handle.token().throwIfCancelled();
+        return searchEngine.search(document, query, handle.token());
+    }
+
+    /** Delivers a search failure or retires a cancelled search. */
+    private void reportFailure(DefaultSearchHandle handle, SearchListener listener, Throwable failure) {
+        Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                ? failure.getCause() : failure;
+        if (cause instanceof CancellationException || cause instanceof OperationCancelledException
+                || handle.isCancelled()) {
+            handle.cancel();
+            activeSearches.remove(handle);
+            return;
+        }
+
+        LOGGER.log(Level.SEVERE, "Search failed", cause);
+        String detail = Objects.toString(cause.getMessage(), cause.getClass().getSimpleName());
+        deliverFailure(handle, listener, "Search failed: " + detail);
     }
 
     /**
@@ -123,7 +199,15 @@ public final class DefaultSearchController implements SearchController {
      */
     private void deliverResults(DefaultSearchHandle handle, SearchListener listener,
                                 List<DocumentSearchResult> results) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        uiDispatcher.dispatch(() -> {
+            try {
+                if (handle.tryComplete()) {
+                    listener.onSearchCompleted(results);
+                }
+            } finally {
+                activeSearches.remove(handle);
+            }
+        });
     }
 
     /**
@@ -134,6 +218,14 @@ public final class DefaultSearchController implements SearchController {
      * @param message  the user-presentable failure message
      */
     private void deliverFailure(DefaultSearchHandle handle, SearchListener listener, String message) {
-        throw new UnsupportedOperationException("TODO: Member C");
+        uiDispatcher.dispatch(() -> {
+            try {
+                if (handle.tryFail()) {
+                    listener.onSearchFailed(message);
+                }
+            } finally {
+                activeSearches.remove(handle);
+            }
+        });
     }
 }

@@ -1,102 +1,182 @@
 package controllers.concurrency;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests for {@code ExecutorTaskScheduler}. Owner: Member C.
- *
- * <p>Cases C-31..C-35 of {@code design/test-plan.md}. Every test is {@code @Disabled} until
- * implemented: remove the annotation, implement Arrange-Act-Assert as described in the method
- * Javadoc, and keep the method name and {@code @DisplayName} unchanged (they are referenced by
- * the test plan and the traceability table).</p>
- */
 class ExecutorTaskSchedulerTest {
 
     private ExecutorTaskScheduler scheduler;
 
-    /** Creates fresh fixtures for every test (no shared state between tests). */
     @BeforeEach
     void setUp() {
         scheduler = new ExecutorTaskScheduler(2, 3, 2);
     }
 
-    /**
-     * C-31: bounded import pool (4.4) [concurrency].
-     *
-     * <p>Arrange: 5 tasks that record concurrency and wait on a latch.</p>
-     * <p>Act: submitImport.</p>
-     * <p>Assert: max observed concurrency == 2; all finish after release (await with timeout).</p>
-     */
+    @AfterEach
+    void stopScheduler() {
+        scheduler.shutdownNow();
+    }
+
     @Test
     @Tag("concurrency")
-    @Disabled("TODO: Member C")
     @DisplayName("C-31 bounded import pool (4.4)")
-    void submitImport_fiveBlockingTasks_atMostTwoRunConcurrently() {
-        fail("TODO: Member C - C-31");
+    void submitImport_fiveBlockingTasks_atMostTwoRunConcurrently() throws Exception {
+        var entered = new CountDownLatch(2);
+        var release = new CountDownLatch(1);
+        var active = new AtomicInteger();
+        var peak = new AtomicInteger();
+        var futures = new ArrayList<Future<?>>();
+
+        for (int i = 0; i < 5; i++) {
+            futures.add(scheduler.submitImport(() -> {
+                int count = active.incrementAndGet();
+                peak.accumulateAndGet(count, Math::max);
+                entered.countDown();
+                try {
+                    assertTrue(release.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(failure);
+                } finally {
+                    active.decrementAndGet();
+                }
+            }));
+        }
+
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+        }
+
+        for (Future<?> future : futures) {
+            future.get(5, TimeUnit.SECONDS);
+        }
+        assertEquals(2, peak.get());
     }
 
-    /**
-     * C-32: search pool size [concurrency].
-     *
-     * <p>Arrange: 6 tasks blocking on a barrier of 3.</p>
-     * <p>Act: supplySearch.</p>
-     * <p>Assert: 3 run concurrently; results returned via CompletableFuture.</p>
-     */
     @Test
     @Tag("concurrency")
-    @Disabled("TODO: Member C")
     @DisplayName("C-32 search pool size")
-    void supplySearch_manyTasks_useConfiguredParallelism() {
-        fail("TODO: Member C - C-32");
+    void supplySearch_manyTasks_useConfiguredParallelism() throws Exception {
+        var barrier = new CyclicBarrier(3);
+        var futures = new ArrayList<CompletableFuture<Integer>>();
+
+        for (int i = 0; i < 6; i++) {
+            futures.add(scheduler.supplySearch(() -> {
+                try {
+                    return barrier.await(5, TimeUnit.SECONDS);
+                } catch (Exception failure) {
+                    throw new AssertionError(failure);
+                }
+            }));
+        }
+
+        for (var future : futures) {
+            assertTrue(future.get(5, TimeUnit.SECONDS) >= 0);
+        }
     }
 
-    /**
-     * C-33: thread naming [unit].
-     *
-     * <p>Arrange: capture Thread.currentThread() in each pool.</p>
-     * <p>Act: thread factory.</p>
-     * <p>Assert: names start with lse-import-, lse-search-, lse-background-; isDaemon false.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-33 thread naming")
-    void workerThreads_areNamedByPool() {
-        fail("TODO: Member C - C-33");
+    void workerThreads_areNamedByPool() throws Exception {
+        var imported = new CompletableFuture<Thread>();
+        var background = new CompletableFuture<Thread>();
+
+        scheduler.submitImport(() -> imported.complete(Thread.currentThread()));
+        scheduler.submitBackground(() -> background.complete(Thread.currentThread()));
+        var search = scheduler.supplySearch(Thread::currentThread);
+
+        checkThread(imported.get(5, TimeUnit.SECONDS), "lse-import-");
+        checkThread(search.get(5, TimeUnit.SECONDS), "lse-search-");
+        checkThread(background.get(5, TimeUnit.SECONDS), "lse-background-");
     }
 
-    /**
-     * C-34: shutdown (R8) [concurrency].
-     *
-     * <p>Arrange: task waiting on a latch; shutdownNow; submit another.</p>
-     * <p>Act: shutdownNow.</p>
-     * <p>Assert: running task interrupted within 1 s; new submit throws RejectedExecutionException;
-     * isShutdown true.</p>
-     */
     @Test
     @Tag("concurrency")
-    @Disabled("TODO: Member C")
     @DisplayName("C-34 shutdown (R8)")
-    void shutdownNow_interruptsRunningAndRejectsNew() {
-        fail("TODO: Member C - C-34");
+    void shutdownNow_interruptsRunningAndRejectsNew() throws Exception {
+        var started = new CountDownLatch(1);
+        var interrupted = new CountDownLatch(1);
+
+        scheduler.submitBackground(() -> {
+            started.countDown();
+            try {
+                new CountDownLatch(1).await();
+            } catch (InterruptedException expected) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        scheduler.shutdownNow();
+        assertTrue(interrupted.await(1, TimeUnit.SECONDS));
+        assertTrue(scheduler.isShutdown());
+        assertThrows(RejectedExecutionException.class,
+                () -> scheduler.submitBackground(() -> {}));
     }
 
-    /**
-     * C-35: exceptions are not swallowed [unit].
-     *
-     * <p>Arrange: attach a java.util.logging Handler; submit task throwing RuntimeException.</p>
-     * <p>Act: submitBackground.</p>
-     * <p>Assert: handler receives SEVERE record with the exception.</p>
-     */
     @Test
-    @Disabled("TODO: Member C")
     @DisplayName("C-35 exceptions are not swallowed")
-    void submitBackground_throwingTask_isLoggedNotLost() {
-        fail("TODO: Member C - C-35");
+    void submitBackground_throwingTask_isLoggedNotLost() throws Exception {
+        Logger logger = Logger.getLogger(ExecutorTaskScheduler.class.getName());
+        var records = new LinkedBlockingQueue<LogRecord>();
+
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+
+        logger.addHandler(handler);
+        try {
+            RuntimeException expected = new IllegalStateException("task failure");
+            Future<?> future = scheduler.submitBackground(() -> {
+                throw expected;
+            });
+
+            assertSame(expected, assertThrows(ExecutionException.class,
+                    () -> future.get(5, TimeUnit.SECONDS)).getCause());
+
+            LogRecord record = records.poll(5, TimeUnit.SECONDS);
+            assertNotNull(record);
+            assertEquals(Level.SEVERE, record.getLevel());
+            assertSame(expected, record.getThrown());
+        } finally {
+            logger.removeHandler(handler);
+        }
+    }
+
+    private static void checkThread(Thread thread, String prefix) {
+        assertTrue(thread.getName().startsWith(prefix));
+        assertFalse(thread.isDaemon());
     }
 }
