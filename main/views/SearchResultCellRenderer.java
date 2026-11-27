@@ -104,7 +104,9 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
     }
 
     /**
-     * Escapes {@code & < > "} so that user text can be embedded in Swing HTML.
+     * Escapes {@code & < > "} so that user text can be embedded in Swing HTML, and turns every space
+     * into {@code &nbsp;} because HTML would collapse consecutive spaces, which the search treats as
+     * significant (S2).
      *
      * @param text the raw text, not {@code null}
      * @return the escaped text
@@ -125,6 +127,9 @@ public final class SearchResultCellRenderer implements ListCellRenderer<Document
                     break;
                 case '"':
                     escaped.append("&quot;");
+                    break;
+                case ' ':
+                    escaped.append("&nbsp;");
                     break;
                 default:
                     escaped.append(character);

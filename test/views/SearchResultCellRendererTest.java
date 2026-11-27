@@ -63,7 +63,26 @@ class SearchResultCellRendererTest {
 
         // Assert
         assertEquals("Doc \"1\"", resultTexts.get(0));
-        assertEquals("<html>a&lt;b <b>NEEDLE</b> &amp;c</html>", resultTexts.get(1));
+        assertEquals("<html>a&lt;b&nbsp;<b>NEEDLE</b>&nbsp;&amp;c</html>", resultTexts.get(1));
         assertEquals("Select a document", nullTitle);
+    }
+
+    /**
+     * D-51: consecutive spaces survive in the snippet HTML (whitespace is significant in a query).
+     */
+    @Test
+    @DisplayName("D-51 snippet keeps consecutive spaces (S2, U4)")
+    void snippetHtml_consecutiveSpaces_areKeptAsNonBreakingSpaces() {
+        // Arrange
+        String text = "a Computer  Algorithm b";
+        MatchRange match = new MatchRange(2, 21);
+        DocumentSearchResult result = new DocumentSearchResult(TestDocuments.document("Doc", text),
+                List.of(match), new Snippet(text, match, false, false));
+
+        // Act
+        String html = SearchResultCellRenderer.snippetHtml(result);
+
+        // Assert
+        assertEquals("<html>a&nbsp;<b>Computer&nbsp;&nbsp;Algorithm</b>&nbsp;b</html>", html);
     }
 }
