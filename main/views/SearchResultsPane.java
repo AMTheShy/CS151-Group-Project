@@ -106,13 +106,15 @@ public final class SearchResultsPane extends JPanel {
     }
 
     /**
-     * Cancels the tab's search and removes the tab (D-41).
+     * Cancels the tab's search, stops any render still running in its reader, and removes the tab
+     * (D-41, D-50).
      *
      * @param tab a tab of this pane, not {@code null}
      */
     public void closeTab(SearchTabPanel tab) {
         Objects.requireNonNull(tab, "tab");
         tab.cancelSearch();
+        tab.clearReader();
         tabbedPane.remove(tab);
         showCard();
     }

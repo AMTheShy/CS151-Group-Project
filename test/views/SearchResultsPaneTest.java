@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static views.SwingTestSupport.onEdt;
 import static views.SwingTestSupport.onEdtGet;
 import static views.SwingTestSupport.result;
@@ -18,6 +19,7 @@ import models.SearchQuery;
 import testsupport.FakeDocumentLibraryController;
 import testsupport.FakeSearchController;
 import testsupport.FakeSearchController.StartedSearch;
+import testsupport.TestDocuments;
 import views.support.TabTitleFormatter;
 
 /**
@@ -31,6 +33,9 @@ import views.support.TabTitleFormatter;
 class SearchResultsPaneTest {
 
     private FakeSearchController searchController;
+
+    /** A document long enough to need several chunk steps (D-50). */
+    private static final int LARGE_DOCUMENT_LENGTH = 2 * 1024 * 1024;
 
     private SearchResultsPane pane;
 
@@ -117,5 +122,32 @@ class SearchResultsPaneTest {
         assertEquals(2, onEdtGet(pane::tabCount));
         assertEquals("1 matching document", onEdtGet(firstTab::statusText));
         assertEquals("Searching...", onEdtGet(secondTab::statusText));
+    }
+
+    /**
+     * D-50: closing a tab whose reader is still inserting a large document stops the remaining EDT steps.
+     */
+    @Test
+    @DisplayName("D-50 closing a tab stops its reader's render (U3, U6)")
+    void closeTab_renderInProgress_stopsReaderRendering() {
+        // Arrange
+        SearchTabPanel tab = onEdtGet(() -> pane.openSearch(SearchQuery.of("needle")));
+        String content = "needle " + TestDocuments.asciiText(LARGE_DOCUMENT_LENGTH, 3);
+        onEdt(() -> searchController.complete(searchController.lastSearch(),
+                List.of(result("Big", content, "needle"))));
+        DocumentReaderPanel reader = tab.readerPanel();
+
+        // Act
+        onEdt(() -> {
+            tab.resultComboBox().setSelectedIndex(0);
+            pane.closeTab(tab);
+        });
+        onEdt(() -> {
+            // runs after any chunk step that was already queued
+        });
+
+        // Assert
+        assertTrue(onEdtGet(reader::isRenderComplete));
+        assertEquals(0, onEdtGet(() -> reader.textArea().getDocument().getLength()));
     }
 }

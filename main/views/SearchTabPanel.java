@@ -164,6 +164,24 @@ public final class SearchTabPanel extends JPanel implements SearchListener {
         statusLabel.setText("Search failed: " + message);
     }
 
+    /**
+     * Stops any render still in progress and empties the reader; called when the tab is closed so
+     * that no chained EDT steps of a large document keep running.
+     */
+    void clearReader() {
+        shownResult = null;
+        readerPanel.clear();
+    }
+
+    /**
+     * Test accessor (D-50).
+     *
+     * @return the reader of this tab
+     */
+    DocumentReaderPanel readerPanel() {
+        return readerPanel;
+    }
+
     /** Shows the selected result in the reader, or clears the reader when nothing is selected. */
     private void onSelectionChanged() {
         Object selected = comboModel.getSelectedItem();
