@@ -9,11 +9,15 @@ import static views.SwingTestSupport.onEdt;
 import static views.SwingTestSupport.onEdtGet;
 import static views.SwingTestSupport.result;
 
+import java.awt.Dimension;
+import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+
+import javax.swing.JFrame;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +59,9 @@ class DocumentReaderPanelTest {
 
     /** Target for the whole render (3.4). */
     private static final long MAX_RENDER_MILLIS = 1_000;
+
+    /** Size of the visible frame used when a display is available (includes layout and first paint). */
+    private static final Dimension BENCHMARK_FRAME_SIZE = new Dimension(1000, 700);
 
     /** Target for a single EDT step (U6). */
     private static final long MAX_EDT_STEP_MILLIS = 100;
@@ -193,18 +200,36 @@ class DocumentReaderPanelTest {
         SearchQuery query = SearchQuery.of(BENCHMARK_NEEDLE);
         List<Long> totalNanos = new ArrayList<>();
         List<Long> longestStepNanos = new ArrayList<>();
-        for (int run = 0; run < BENCHMARK_WARM_UPS + BENCHMARK_RUNS; run++) {
-            onEdt(reader::clear);
+        JFrame benchmarkFrame = GraphicsEnvironment.isHeadless() ? null : onEdtGet(() -> {
+            JFrame frame = new JFrame("D-47");
+            frame.add(reader);
+            frame.setSize(BENCHMARK_FRAME_SIZE);
+            frame.setVisible(true);
+            return frame;
+        });
+        try {
+            for (int run = 0; run < BENCHMARK_WARM_UPS + BENCHMARK_RUNS; run++) {
+                onEdt(reader::clear);
 
-            // Act
-            long start = System.nanoTime();
-            onEdt(() -> reader.showResult(result, query));
-            long longestRoundTrip = awaitRenderMeasuringLongestRoundTrip(reader);
-            long elapsed = System.nanoTime() - start;
+                // Act
+                long start = System.nanoTime();
+                onEdt(() -> reader.showResult(result, query));
+                long longestRoundTrip = awaitRenderMeasuringLongestRoundTrip(reader);
+                long paintStart = System.nanoTime();
+                onEdt(() -> {
+                    // queued behind the layout and first paint triggered by the last render step
+                });
+                longestRoundTrip = Math.max(longestRoundTrip, System.nanoTime() - paintStart);
+                long elapsed = System.nanoTime() - start;
 
-            if (run >= BENCHMARK_WARM_UPS) {
-                totalNanos.add(elapsed);
-                longestStepNanos.add(longestRoundTrip);
+                if (run >= BENCHMARK_WARM_UPS) {
+                    totalNanos.add(elapsed);
+                    longestStepNanos.add(longestRoundTrip);
+                }
+            }
+        } finally {
+            if (benchmarkFrame != null) {
+                onEdt(benchmarkFrame::dispose);
             }
         }
 
