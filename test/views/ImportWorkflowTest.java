@@ -12,8 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import testsupport.FakeDocumentLibraryController.ImportRequest;
 import testsupport.FakeDocumentLibraryController;
+import testsupport.FakeDocumentLibraryController.ImportRequest;
 import views.ScriptedDialogService.Question;
 
 /**

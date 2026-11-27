@@ -24,8 +24,8 @@ import models.DocumentSearchResult;
 import models.MatchRange;
 import models.MatchRanges;
 import models.SearchQuery;
-import testsupport.FakeDocumentLibraryController.ExportRequest;
 import testsupport.FakeDocumentLibraryController;
+import testsupport.FakeDocumentLibraryController.ExportRequest;
 import testsupport.TestDocuments;
 
 /**

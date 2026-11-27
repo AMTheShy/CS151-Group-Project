@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import models.SearchQuery;
 import testsupport.FakeDocumentLibraryController;
-import testsupport.FakeSearchController.StartedSearch;
 import testsupport.FakeSearchController;
+import testsupport.FakeSearchController.StartedSearch;
 import views.support.TabTitleFormatter;
 
 /**
