@@ -146,6 +146,7 @@ class DocumentLibraryPanelTest {
             return panel.startupStatusLabel().getText();
         });
         String afterLoad = onEdtGet(() -> {
+            panel.onDocumentsChanged(summaries("A", "B", "C", "D", "E"));
             panel.onStartupLoadCompleted(new LoadSummary(5, 0, List.of()));
             return panel.startupStatusLabel().getText();
         });
@@ -158,5 +159,24 @@ class DocumentLibraryPanelTest {
         assertEquals("Loading saved documents... 2 / 5", duringLoad);
         assertEquals("5 documents", afterLoad);
         assertEquals("5 documents (1 could not be loaded)", withProblem);
+    }
+
+    /**
+     * D-52: documents imported while the startup load runs are included in the count.
+     */
+    @Test
+    @DisplayName("D-52 startup count includes documents imported during the load (D5)")
+    void onStartupLoadCompleted_documentsImportedDuringLoad_countsTableRows() {
+        // Arrange
+        onEdt(() -> panel.onDocumentsChanged(summaries("A", "B", "C", "D", "E", "imported")));
+
+        // Act
+        String status = onEdtGet(() -> {
+            panel.onStartupLoadCompleted(new LoadSummary(5, 0, List.of()));
+            return panel.startupStatusLabel().getText();
+        });
+
+        // Assert
+        assertEquals("6 documents", status);
     }
 }

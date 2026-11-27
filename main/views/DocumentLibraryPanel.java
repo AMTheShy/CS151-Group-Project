@@ -42,7 +42,8 @@ import models.LoadSummary;
  * <p><b>Listener callbacks</b> (registered by {@link MainFrame}): {@code onDocumentsChanged} &rarr;
  * {@code tableModel.setDocuments}; {@code onStartupLoadProgress(k, n)} &rarr; label
  * {@code "Loading saved documents... k / n"}; {@code onStartupLoadCompleted} &rarr; label
- * {@code "n documents"} (and if {@code summary.hasProblems()}, append
+ * {@code "n documents"} with n = the table's row count, so documents imported during the load are
+ * included (and if {@code summary.hasProblems()}, append
  * {@code " (m could not be loaded)"} with the problems as tooltip); after the startup load has
  * ended, every {@code onDocumentsChanged} refreshes the count from the table; {@code onStartupLoadFailed}
  * &rarr; {@code dialogs.showError("Loading saved documents failed", message)};
@@ -141,7 +142,7 @@ public final class DocumentLibraryPanel extends JPanel implements LibraryListene
         Objects.requireNonNull(summary, "summary");
         startupLoadFinished = true;
         loadProblems = summary.problems();
-        showDocumentCount(summary.loadedCount());
+        showDocumentCount(tableModel.getRowCount());
     }
 
     /** {@inheritDoc} */
